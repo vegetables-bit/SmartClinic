@@ -1,0 +1,82 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Patients | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Patient management</p>
+            <h1>Patients</h1>
+            <p class="lead">Search and manage patient demographic records.</p>
+        </div>
+        <a class="button" href="{% url 'clinic_patients:patient_create' %}">Register patient</a>
+    </div>
+
+    <form method="get" class="patient-search" role="search">
+        <div>
+            <label for="{{ search_form.query.id_for_label }}">{{ search_form.query.label }}</label>
+            {{ search_form.query }}
+            {% for error in search_form.query.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </div>
+        <div>
+            <label for="{{ search_form.status.id_for_label }}">Show</label>
+            {{ search_form.status }}
+            {% for error in search_form.status.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </div>
+        {% if search_form.non_field_errors %}<div class="form-errors" aria-live="polite">{{ search_form.non_field_errors }}</div>{% endif %}
+        <div class="button-row patient-search__actions">
+            <button type="submit">Search</button>
+            <a class="button button--secondary" href="{% url 'clinic_patients:patient_list' %}">Clear</a>
+        </div>
+    </form>
+
+    <div class="table-shell">
+        <table>
+            <caption class="visually-hidden">Patient records matching the selected filters</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Patient ID</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Gender</th>
+                    <th scope="col">Date of birth</th>
+                    <th scope="col">Phone</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for patient in patients %}
+                    <tr>
+                        <td>{{ patient.patient_identifier }}</td>
+                        <td>{{ patient.full_name }}</td>
+                        <td>{{ patient.get_gender_display }}</td>
+                        <td>{{ patient.date_of_birth|default:"—" }}</td>
+                        <td>{{ patient.phone_number|default:"—" }}</td>
+                        <td>
+                            {% if patient.is_archived %}
+                                <span class="inline-status inline-status--inactive">Archived</span>
+                            {% else %}
+                                <span class="inline-status">Active</span>
+                            {% endif %}
+                        </td>
+                        <td><a href="{% url 'clinic_patients:patient_profile' patient.patient_identifier %}">View record</a></td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7">No patient records match these filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if patients.paginator.num_pages > 1 %}
+        <nav class="pagination" aria-label="Patient list pages">
+            {% if patients.has_previous %}
+                <a href="?query={{ search_form.cleaned_data.query|urlencode }}&amp;status={{ search_form.cleaned_data.status|urlencode }}&amp;page={{ patients.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ patients.number }} of {{ patients.paginator.num_pages }}</span>
+            {% if patients.has_next %}
+                <a href="?query={{ search_form.cleaned_data.query|urlencode }}&amp;status={{ search_form.cleaned_data.status|urlencode }}&amp;page={{ patients.next_page_number }}">Next</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+</section>
+{% endblock %}

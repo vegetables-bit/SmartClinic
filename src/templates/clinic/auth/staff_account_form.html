@@ -1,0 +1,25 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ page_title }} | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <h1>{{ page_title }}</h1>
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="form-errors" aria-live="polite">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div>
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="field-help">{{ field.help_text }}</p>{% endif %}
+                {% if field.errors %}<ul class="errorlist" role="alert">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        <div class="button-row">
+            <button type="submit">Save staff details</button>
+        </div>
+    </form>
+    <p><a href="{% url 'clinic_auth:staff_account_list' %}">Cancel and return to staff accounts</a></p>
+</section>
+{% endblock %}

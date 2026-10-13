@@ -1,0 +1,38 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Staff dashboard | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <h1>Staff dashboard</h1>
+            <p class="lead">Welcome back, {{ request.user.get_full_name|default:request.user.username }}.</p>
+        </div>
+        <span class="inline-status">{{ request.user.staff_profile.get_role_display }}</span>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-card__label">Role</div>
+            <div class="stat-card__value">{{ request.user.staff_profile.get_role_display }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card__label">Status</div>
+            <div class="stat-card__value">Active</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card__label">Access</div>
+            <div class="stat-card__value">Protected</div>
+        </div>
+    </div>
+</section>
+
+<section class="panel panel--compact">
+    <h2>Quick actions</h2>
+    <div class="button-row">
+        <a class="button" href="{% url 'clinic_auth:password_change' %}">Change password</a>
+        {% if request.user.staff_profile.role == "administrator" %}
+            <a class="button button--secondary" href="{% url 'clinic_auth:staff_account_list' %}">Open staff directory</a>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

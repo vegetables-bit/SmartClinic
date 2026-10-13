@@ -1,0 +1,44 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ profile.account.get_full_name|default:profile.account.username }} | Staff | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Staff profile</p>
+            <h1>{{ profile.account.get_full_name|default:profile.account.username }}</h1>
+            <p class="lead">Staff identifier: <strong>{{ profile.staff_identifier|default:"Not assigned" }}</strong></p>
+        </div>
+        {% if profile.is_active and profile.account.is_active %}
+            <span class="inline-status">Active</span>
+        {% else %}
+            <span class="inline-status inline-status--inactive">Inactive</span>
+        {% endif %}
+    </div>
+
+    <dl class="staff-details">
+        <div><dt>Username</dt><dd>{{ profile.account.username }}</dd></div>
+        <div><dt>Email</dt><dd>{{ profile.account.email|default:"—" }}</dd></div>
+        <div><dt>Role</dt><dd>{{ profile.get_role_display }}</dd></div>
+        <div><dt>Phone</dt><dd>{{ profile.phone_number|default:"—" }}</dd></div>
+        <div>
+            <dt>Departments</dt>
+            <dd>{% for department in profile.departments.all %}{{ department.name }}{% if not forloop.last %}, {% endif %}{% empty %}Not assigned{% endfor %}</dd>
+        </div>
+        <div><dt>Account created</dt><dd><time datetime="{{ profile.created_at|date:'c' }}">{{ profile.created_at }}</time></dd></div>
+        <div><dt>Last profile update</dt><dd><time datetime="{{ profile.updated_at|date:'c' }}">{{ profile.updated_at }}</time></dd></div>
+    </dl>
+
+    <div class="button-row staff-profile__actions">
+        <a class="button" href="{% url 'clinic_auth:staff_account_edit' profile.pk %}">Edit staff details</a>
+        <form method="post" action="{% url 'clinic_auth:staff_account_status' profile.pk %}">
+            {% csrf_token %}
+            {% if profile.is_active and profile.account.is_active %}
+                <button class="button--danger" type="submit" aria-label="Deactivate {{ profile.account.get_full_name|default:profile.account.username }}">Deactivate account</button>
+            {% else %}
+                <button type="submit">Activate account</button>
+            {% endif %}
+        </form>
+        <a class="button button--secondary" href="{% url 'clinic_auth:staff_account_list' %}">Back to directory</a>
+    </div>
+</section>
+{% endblock %}

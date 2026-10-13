@@ -1,0 +1,49 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ patient.full_name }} | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header patient-profile__header">
+        <div>
+            <p class="eyebrow">Patient profile</p>
+            <h1>{{ patient.full_name }}</h1>
+            <p class="lead">Patient ID: <strong>{{ patient.patient_identifier }}</strong></p>
+        </div>
+        {% if patient.is_archived %}
+            <span class="inline-status inline-status--inactive">Archived</span>
+        {% else %}
+            <span class="inline-status">Active</span>
+        {% endif %}
+    </div>
+
+    <dl class="patient-details">
+        <div><dt>Gender</dt><dd>{{ patient.get_gender_display|default:"Not provided" }}</dd></div>
+        <div><dt>Date of birth</dt><dd>{{ patient.date_of_birth|default:"Not provided" }}</dd></div>
+        <div><dt>Phone</dt><dd>{{ patient.phone_number|default:"Not provided" }}</dd></div>
+        <div><dt>Address</dt><dd>{{ patient.address|linebreaksbr|default:"Not provided" }}</dd></div>
+        <div><dt>Emergency contact</dt><dd>{{ patient.emergency_contact_name|default:"Not provided" }}</dd></div>
+        <div><dt>Emergency contact phone</dt><dd>{{ patient.emergency_contact_phone|default:"Not provided" }}</dd></div>
+        <div><dt>Record created</dt><dd><time datetime="{{ patient.created_at|date:'c' }}">{{ patient.created_at|date:"M j, Y, P" }}</time></dd></div>
+        <div><dt>Last updated</dt><dd><time datetime="{{ patient.updated_at|date:'c' }}">{{ patient.updated_at|date:"M j, Y, P" }}</time></dd></div>
+    </dl>
+
+    <div class="button-row patient-profile__actions">
+        <a class="button button--secondary" href="{% url 'clinic_patients:patient_list' %}">Back to patients</a>
+        <a class="button" href="{% url 'clinic_patients:patient_edit' patient.patient_identifier %}">Edit demographics</a>
+        {% if request.user.staff_profile.role == "administrator" %}
+            {% if patient.is_archived %}
+                <form method="post" action="{% url 'clinic_patients:patient_restore' patient.patient_identifier %}">
+                    {% csrf_token %}
+                    <button type="submit">Restore record</button>
+                </form>
+            {% else %}
+                <form method="post" action="{% url 'clinic_patients:patient_archive' patient.patient_identifier %}">
+                    {% csrf_token %}
+                    <button type="submit" class="button--danger">Archive record</button>
+                </form>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <p class="notice patient-profile__notice">This page contains demographic information only. Appointment and consultation features are not available yet.</p>
+</section>
+{% endblock %}

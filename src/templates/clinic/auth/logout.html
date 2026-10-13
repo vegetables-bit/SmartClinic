@@ -1,0 +1,13 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Sign out | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <h1>Sign out</h1>
+    <p class="lead">End your current staff session?</p>
+    <form method="post" action="{% url 'clinic_auth:logout' %}" class="button-row">
+        {% csrf_token %}
+        <button type="submit">Sign out</button>
+        <a class="button button--secondary" href="{% url 'clinic_auth:staff_home' %}">Cancel</a>
+    </form>
+</section>
+{% endblock %}

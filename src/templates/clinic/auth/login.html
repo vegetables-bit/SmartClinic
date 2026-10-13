@@ -1,0 +1,26 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Staff sign in | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <h1>Staff sign in</h1>
+    <p class="lead">Use your staff username, email, or employee identifier and your password. Accounts are created by an administrator.</p>
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="form-errors" aria-live="polite">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div>
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        <div class="button-row">
+            <button type="submit">Sign in</button>
+        </div>
+    </form>
+    <p><a href="{% url 'clinic_auth:password_reset' %}">Forgot your password?</a></p>
+</section>
+{% endblock %}

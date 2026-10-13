@@ -1,0 +1,64 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Smart Clinic{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'clinic/css/app.css' %}">
+</head>
+<body>
+    <div class="{% if request.user.is_authenticated %}app-shell{% else %}guest-shell{% endif %}">
+        {% if request.user.is_authenticated %}
+            <aside class="app-sidebar" aria-label="Main navigation">
+                <div class="brand-lockup">
+                    <span class="brand-mark">SC</span>
+                    <span>Smart Clinic</span>
+                </div>
+
+                <nav class="app-nav" aria-label="Staff navigation">
+                    <a class="nav-link {% if request.resolver_match and request.resolver_match.view_name == 'clinic_auth:staff_home' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_home' %}">Home</a>
+                    <a class="nav-link {% if request.resolver_match and request.resolver_match.view_name == 'clinic_auth:password_change' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:password_change' %}">Change password</a>
+                    {% if request.user.staff_profile.role == 'administrator' or request.user.staff_profile.role == 'receptionist' %}
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.namespace == 'clinic_patients' %}nav-link--active{% endif %}" href="{% url 'clinic_patients:patient_list' %}">Patients</a>
+                    {% endif %}
+                    {% if request.user.staff_profile.role == 'administrator' %}
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.url_name == 'staff_account_list' or request.resolver_match.url_name == 'staff_account_profile' or request.resolver_match.url_name == 'staff_account_edit' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_account_list' %}">Staff directory</a>
+                    {% endif %}
+                </nav>
+
+                <div class="app-sidebar__meta">
+                    <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+                    {% if request.user.staff_profile %}
+                        <span>{{ request.user.staff_profile.get_role_display }}</span>
+                    {% endif %}
+                    <form method="post" action="{% url 'clinic_auth:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="button button--ghost">Sign out</button>
+                    </form>
+                </div>
+            </aside>
+        {% else %}
+            <header class="guest-header">
+                <div class="guest-header__inner">
+                    <div class="guest-brand">Smart Clinic</div>
+                    <div>Staff access portal</div>
+                </div>
+            </header>
+        {% endif %}
+
+        <main class="{% if request.user.is_authenticated %}app-main{% else %}guest-main{% endif %}">
+            {% if messages %}
+                <ul class="message-list" aria-label="Notifications">
+                    {% for message in messages %}
+                        <li class="message">{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            <div class="{% if request.user.is_authenticated %}content-stack{% endif %}">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</body>
+</html>

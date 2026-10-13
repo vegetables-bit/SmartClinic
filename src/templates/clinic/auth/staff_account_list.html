@@ -1,0 +1,90 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Staff directory | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Staff management</p>
+            <h1>Staff directory</h1>
+        </div>
+        <a class="button" href="{% url 'clinic_auth:staff_account_create' %}">Register staff member</a>
+    </div>
+
+    <form method="get" class="staff-search" role="search">
+        <div>
+            <label for="{{ search_form.query.id_for_label }}">{{ search_form.query.label }}</label>
+            {{ search_form.query }}
+        </div>
+        <div>
+            <label for="{{ search_form.role.id_for_label }}">Role</label>
+            {{ search_form.role }}
+        </div>
+        <div>
+            <label for="{{ search_form.status.id_for_label }}">Account status</label>
+            {{ search_form.status }}
+        </div>
+        <div class="staff-search__actions">
+            <button type="submit">Search</button>
+            <a class="button button--secondary" href="{% url 'clinic_auth:staff_account_list' %}">Clear</a>
+        </div>
+        {% if search_form.errors %}
+            <div class="form-errors" role="alert">{{ search_form.errors }}</div>
+        {% endif %}
+    </form>
+
+    <div class="table-shell">
+        <table>
+            <caption class="visually-hidden">Registered healthcare staff</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Staff ID</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Phone</th>
+                    <th scope="col">Department</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for profile in staff_profiles %}
+                <tr>
+                    <td>{{ profile.staff_identifier|default:"—" }}</td>
+                    <td>
+                        <a href="{% url 'clinic_auth:staff_account_profile' profile.pk %}">
+                            {{ profile.account.get_full_name|default:profile.account.username }}
+                        </a>
+                    </td>
+                    <td>{{ profile.get_role_display }}</td>
+                    <td>{{ profile.phone_number|default:"—" }}</td>
+                    <td>{% for department in profile.departments.all %}{{ department.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+                    <td>
+                        {% if profile.is_active and profile.account.is_active %}
+                            <span class="inline-status">Active</span>
+                        {% else %}
+                            <span class="inline-status inline-status--inactive">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td><a href="{% url 'clinic_auth:staff_account_edit' profile.pk %}">Edit</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No staff members match these filters.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if staff_profiles.paginator.num_pages > 1 %}
+        <nav class="pagination" aria-label="Staff directory pages">
+            {% if staff_profiles.has_previous %}
+                <a class="button button--secondary" href="?query={{ search_form.query.value|urlencode }}&amp;role={{ search_form.role.value|urlencode }}&amp;status={{ search_form.status.value|urlencode }}&amp;page={{ staff_profiles.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ staff_profiles.number }} of {{ staff_profiles.paginator.num_pages }}</span>
+            {% if staff_profiles.has_next %}
+                <a class="button button--secondary" href="?query={{ search_form.query.value|urlencode }}&amp;role={{ search_form.role.value|urlencode }}&amp;status={{ search_form.status.value|urlencode }}&amp;page={{ staff_profiles.next_page_number }}">Next</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+    <p><a href="{% url 'clinic_auth:staff_home' %}">Return to staff dashboard</a></p>
+</section>
+{% endblock %}

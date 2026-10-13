@@ -1,0 +1,49 @@
+{% extends "clinic/auth/base.html" %}
+
+{% block title %}Smart Clinic | Staff portal{% endblock %}
+
+{% block content %}
+<section class="panel hero">
+    <div class="hero__copy">
+        <p class="eyebrow">Patient operations hub</p>
+        <h1>Modern clinic coordination for every staff role.</h1>
+        <p class="lead">Smart Clinic brings together secure staff access, role-aware navigation, and a responsive shell for the next wave of patient care workflows.</p>
+        <div class="hero__actions">
+            <a class="button" href="{% url 'clinic_auth:login' %}">Staff sign in</a>
+            <a class="button button--secondary" href="/admin/">Open admin</a>
+        </div>
+    </div>
+
+    <div class="hero__panel" aria-label="Clinic operations summary">
+        <div class="mini-stat">
+            <span>Roles enabled</span>
+            <strong>4</strong>
+        </div>
+        <div class="mini-stat">
+            <span>Auth model</span>
+            <strong>Django built-in</strong>
+        </div>
+        <div class="mini-stat">
+            <span>Access model</span>
+            <strong>Server-side enforced</strong>
+        </div>
+    </div>
+</section>
+
+<section class="feature-grid">
+    <article class="feature-card panel panel--compact">
+        <h2>Secure access</h2>
+        <p>Users sign in with username, email, or staff id, and inactive staff profiles are rejected before a session is established.</p>
+    </article>
+
+    <article class="feature-card panel panel--compact">
+        <h2>Role-aware routes</h2>
+        <p>Administrator-only staff management stays protected on the backend; non-admin staff see a limited experience without bypassing controls.</p>
+    </article>
+
+    <article class="feature-card panel panel--compact">
+        <h2>Responsive shell</h2>
+        <p>The authenticated interface uses a shared clinic-shell layout that scales cleanly from desktop dashboards to smaller devices.</p>
+    </article>
+</section>
+{% endblock %}

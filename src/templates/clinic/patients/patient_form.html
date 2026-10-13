@@ -1,0 +1,36 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ page_title }} | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+    <p class="eyebrow">Patient management</p>
+    <h1>{{ page_title }}</h1>
+    {% if patient %}
+        <p class="lead">Patient ID: {{ patient.patient_identifier }}</p>
+    {% else %}
+        <p class="lead">The patient identifier will be generated when this record is saved.</p>
+    {% endif %}
+
+    <form method="post" class="form-grid patient-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="form-errors" aria-live="polite">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div class="patient-form__field{% if field.name == 'address' %} patient-form__field--wide{% endif %}">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="field-help">{{ field.help_text }}</p>{% endif %}
+                {% if field.errors %}<ul class="errorlist" aria-live="polite">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        <div class="button-row patient-form__actions">
+            <button type="submit">Save patient</button>
+            {% if patient %}
+                <a class="button button--secondary" href="{% url 'clinic_patients:patient_profile' patient.patient_identifier %}">Cancel</a>
+            {% else %}
+                <a class="button button--secondary" href="{% url 'clinic_patients:patient_list' %}">Cancel</a>
+            {% endif %}
+        </div>
+    </form>
+</section>
+{% endblock %}
