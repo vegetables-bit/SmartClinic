@@ -78,6 +78,9 @@
         {% if request.user.staff_profile.role == "administrator" %}
             <a class="button button--secondary" href="{% url 'clinic_auth:staff_account_list' %}">Open staff directory</a>
         {% endif %}
+        {% if request.user.staff_profile.role == "clinician" %}
+            <a class="button button--secondary" href="{% url 'clinic_clinical:patient_index' %}">Open Clinical Records</a>
+        {% endif %}
     </div>
 </section>
 {% endblock %}

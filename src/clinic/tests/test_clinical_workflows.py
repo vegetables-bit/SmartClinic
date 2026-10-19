@@ -79,6 +79,9 @@ class ClinicalWorkflowTests(TestCase):
             args=[patient.patient_identifier],
         )
 
+    def clinical_index_url(self):
+        return reverse("clinic_clinical:patient_index")
+
     def consultation_form_url(self, patient=None):
         patient = patient or self.patient
         return reverse(
@@ -395,8 +398,17 @@ class ClinicalWorkflowTests(TestCase):
                     self.client.get(self.consultation_form_url()).status_code,
                     403,
                 )
+                self.assertEqual(
+                    self.client.get(self.clinical_index_url()).status_code,
+                    403,
+                )
 
         self.login_as(self.other_clinician)
+        self.assertEqual(self.client.get(self.clinical_index_url()).status_code, 200)
+        self.assertNotContains(
+            self.client.get(self.clinical_index_url()),
+            f"<h3>{self.patient.full_name}</h3>",
+        )
         self.assertEqual(self.client.get(self.history_url()).status_code, 404)
         self.assertEqual(self.client.get(detail_url).status_code, 404)
         self.assertEqual(
@@ -412,6 +424,111 @@ class ClinicalWorkflowTests(TestCase):
             self.client.get(self.consultation_form_url()).status_code,
             404,
         )
+
+    def test_clinical_navigation_and_dashboard_action_are_clinician_only(self):
+        clinical_index_url = self.clinical_index_url()
+        for profile in (self.clinician,):
+            with self.subTest(role=profile.role):
+                self.login_as(profile)
+                response = self.client.get(reverse("clinic_auth:staff_home"))
+                self.assertContains(response, f'href="{clinical_index_url}"')
+                self.assertContains(response, "Clinical Records")
+                nav = response.content.decode().split(
+                    '<nav class="app-nav"',
+                    1,
+                )[1].split("</nav>", 1)[0]
+                self.assertIn(clinical_index_url, nav)
+                self.assertNotIn(
+                    reverse("clinic_auth:password_change"),
+                    nav,
+                )
+                self.assertEqual(
+                    self.client.get(reverse("clinic_auth:settings")).status_code,
+                    200,
+                )
+
+        for profile in (self.admin, self.receptionist, self.nurse):
+            with self.subTest(role=profile.role):
+                self.login_as(profile)
+                response = self.client.get(reverse("clinic_auth:staff_home"))
+                self.assertNotContains(response, clinical_index_url)
+                self.assertNotContains(response, "Clinical Records")
+
+    def test_clinical_index_lists_only_care_scope_and_links_to_existing_workflows(self):
+        self.login_as(self.clinician)
+
+        response = self.client.get(self.clinical_index_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.patient.full_name)
+        self.assertNotContains(
+            response,
+            f"<h3>{self.other_patient.full_name}</h3>",
+        )
+        self.assertContains(response, self.history_url())
+        self.assertContains(response, self.consultation_form_url())
+        self.assertEqual(self.client.get(self.history_url()).status_code, 200)
+        self.assertEqual(
+            self.client.get(self.consultation_form_url()).status_code,
+            200,
+        )
+
+    def test_cancelled_appointment_only_does_not_show_history_link(self):
+        self.appointment.status = Appointment.Status.CANCELLED
+        self.appointment.save(update_fields=("status", "updated_at"))
+        self.login_as(self.clinician)
+
+        response = self.client.get(
+            reverse(
+                "clinic_appointments:appointment_detail",
+                args=[self.appointment.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, self.history_url())
+        self.assertNotContains(response, "Patient medical history")
+        self.assertNotContains(response, "Record consultation")
+        self.assertEqual(self.client.get(self.history_url()).status_code, 404)
+
+    def test_other_qualifying_appointment_preserves_history_link_for_cancelled_detail(self):
+        self.appointment.status = Appointment.Status.CANCELLED
+        self.appointment.save(update_fields=("status", "updated_at"))
+        later_start = self.appointment.appointment_at + timedelta(days=1)
+        Appointment.objects.create(
+            patient=self.patient,
+            clinician=self.clinician,
+            appointment_at=later_start,
+            ends_at=later_start + timedelta(minutes=30),
+            status=Appointment.Status.CONFIRMED,
+        )
+        self.login_as(self.clinician)
+
+        response = self.client.get(
+            reverse(
+                "clinic_appointments:appointment_detail",
+                args=[self.appointment.pk],
+            )
+        )
+
+        self.assertContains(response, self.history_url())
+        self.assertEqual(self.client.get(self.history_url()).status_code, 200)
+
+    def test_authored_clinical_record_preserves_history_link_for_cancelled_detail(self):
+        self.appointment.status = Appointment.Status.CANCELLED
+        self.appointment.save(update_fields=("status", "updated_at"))
+        self.create_consultation()
+        self.login_as(self.clinician)
+
+        response = self.client.get(
+            reverse(
+                "clinic_appointments:appointment_detail",
+                args=[self.appointment.pk],
+            )
+        )
+
+        self.assertContains(response, self.history_url())
+        self.assertEqual(self.client.get(self.history_url()).status_code, 200)
 
     def test_unauthenticated_and_missing_records_are_handled_safely(self):
         self.assertEqual(self.client.get(self.history_url()).status_code, 302)

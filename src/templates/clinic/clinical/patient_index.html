@@ -1,0 +1,43 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Clinical Records | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Clinician workspace</p>
+            <h1>Clinical Records</h1>
+            <p class="lead">Patients within your care scope.</p>
+        </div>
+    </div>
+
+    {% if patients %}
+        <div class="clinical-record-list">
+            {% for patient in patients %}
+                <article class="clinical-record-card">
+                    <div class="clinical-record-meta">
+                        <div>
+                            <h3>{{ patient.full_name }}</h3>
+                            <p class="muted">{{ patient.patient_identifier }}</p>
+                        </div>
+                        {% if patient.is_archived %}
+                            <span class="inline-status inline-status--inactive">Archived</span>
+                        {% endif %}
+                    </div>
+                    <div class="button-row">
+                        <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' patient.patient_identifier %}">View medical history</a>
+                        {% if not patient.is_archived %}
+                            <a class="button" href="{% url 'clinic_clinical:consultation_create' patient.patient_identifier %}">Record consultation</a>
+                        {% endif %}
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>No patients are currently within your care scope.</p>
+            <p class="muted">Patients appear here when they have a non-cancelled appointment assigned to you or a clinical record you authored.</p>
+            <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">View your appointments</a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

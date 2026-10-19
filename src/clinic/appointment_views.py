@@ -13,6 +13,7 @@ from clinic.appointment_reminders import (
 )
 from clinic.appointment_forms import AppointmentForm, AppointmentSearchForm
 from clinic.authentication import roles_required
+from clinic.clinical_access import clinician_has_patient_care_scope
 from clinic.models import Appointment, AppointmentNotification, AuditEvent, StaffProfile
 
 APPOINTMENT_MANAGER_ROLES = (
@@ -170,6 +171,13 @@ def appointment_detail(request, appointment_id):
         pk=appointment_id,
     )
     can_manage = request.user.staff_profile.role in APPOINTMENT_MANAGER_ROLES
+    can_view_patient_history = (
+        request.user.staff_profile.role == StaffProfile.Role.CLINICIAN
+        and clinician_has_patient_care_scope(
+            request.user.staff_profile,
+            appointment.patient,
+        )
+    )
     return render(
         request,
         "clinic/appointments/appointment_detail.html",
@@ -177,6 +185,7 @@ def appointment_detail(request, appointment_id):
             "appointment": appointment,
             "appointment_identifier": _appointment_identifier(appointment),
             "can_manage_appointments": can_manage,
+            "can_view_patient_history": can_view_patient_history,
             "can_edit_appointment": can_manage
             and appointment.status in EDITABLE_STATUSES,
             "can_cancel_appointment": can_manage

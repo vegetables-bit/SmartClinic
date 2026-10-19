@@ -5,6 +5,7 @@ from clinic import clinical_views
 app_name = "clinic_clinical"
 
 urlpatterns = [
+    path("", clinical_views.patient_index, name="patient_index"),
     path(
         "patients/<str:patient_identifier>/history/",
         clinical_views.patient_history,

@@ -37,6 +37,11 @@
                             <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2a7 7 0 0 1 7 7v3.3l2.1 4.1a1 1 0 0 1-.9 1.5H3.8a1 1 0 0 1-.9-1.5L5 12.3V9a7 7 0 0 1 7-7zm0 20a2.5 2.5 0 0 1-2.5-2.5h5A2.5 2.5 0 0 1 12 22z"></path></svg><span>Reminders</span>
                         </a>
                     {% endif %}
+                    {% if request.user.staff_profile.role == 'clinician' %}
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.namespace == 'clinic_clinical' %}nav-link--active{% endif %}" href="{% url 'clinic_clinical:patient_index' %}" {% if request.resolver_match and request.resolver_match.namespace == 'clinic_clinical' %}aria-current="page"{% endif %}>
+                            <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20v-1a7 7 0 0 1 14 0v1M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm7-5h4m-2-2v4"></path></svg><span>Clinical Records</span>
+                        </a>
+                    {% endif %}
                     {% if request.user.staff_profile.role == 'administrator' %}
                         <a class="nav-link {% if request.resolver_match and request.resolver_match.url_name == 'staff_account_list' or request.resolver_match.url_name == 'staff_account_profile' or request.resolver_match.url_name == 'staff_account_edit' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_account_list' %}" {% if request.resolver_match and request.resolver_match.url_name == 'staff_account_list' or request.resolver_match.url_name == 'staff_account_profile' or request.resolver_match.url_name == 'staff_account_edit' %}aria-current="page"{% endif %}>
                             <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"></circle><path d="M3 20v-1a6 6 0 0 1 12 0v1m4-12v6m-3-3h6"></path></svg><span>Staff directory</span>

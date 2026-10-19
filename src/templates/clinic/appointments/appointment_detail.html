@@ -28,8 +28,10 @@
 
     <div class="button-row appointment-detail__actions">
         <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Back to appointments</a>
-        {% if request.user.staff_profile.role == "clinician" %}
+        {% if request.user.staff_profile.role == "clinician" and can_view_patient_history %}
             <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' appointment.patient.patient_identifier %}">Patient medical history</a>
+        {% endif %}
+        {% if request.user.staff_profile.role == "clinician" %}
             {% if appointment.status != "cancelled" %}
                 <a class="button" href="{% url 'clinic_clinical:consultation_create' appointment.patient.patient_identifier %}?appointment={{ appointment.pk }}">Record consultation</a>
             {% endif %}

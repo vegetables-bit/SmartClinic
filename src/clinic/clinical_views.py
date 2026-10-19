@@ -1,41 +1,23 @@
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
 from clinic.authentication import roles_required
+from clinic.clinical_access import patients_in_clinician_care
 from clinic.clinical_forms import ConsultationForm, MedicalHistoryEntryForm
 from clinic.models import (
-    Appointment,
     AuditEvent,
     Consultation,
     ConsultationRevision,
     MedicalHistoryEntry,
-    Patient,
     StaffProfile,
 )
 
 
-def _patients_in_clinician_care(clinician):
-    care_appointment_statuses = tuple(
-        status
-        for status, _ in Appointment.Status.choices
-        if status != Appointment.Status.CANCELLED
-    )
-    return Patient.objects.filter(
-        Q(
-            appointments__clinician=clinician,
-            appointments__status__in=care_appointment_statuses,
-        )
-        | Q(consultations__clinician=clinician)
-        | Q(medical_history_entries__author=clinician)
-    ).distinct()
-
-
 def _get_patient_in_clinician_care(request, patient_identifier):
     return get_object_or_404(
-        _patients_in_clinician_care(request.user.staff_profile),
+        patients_in_clinician_care(request.user.staff_profile),
         patient_identifier=patient_identifier,
     )
 
@@ -51,6 +33,19 @@ def _record_clinical_event(actor, action, instance, patient, **metadata):
         action=action,
         content_object=instance,
         metadata=event_metadata,
+    )
+
+
+@roles_required(StaffProfile.Role.CLINICIAN)
+def patient_index(request):
+    patients = patients_in_clinician_care(request.user.staff_profile).order_by(
+        "full_name",
+        "patient_identifier",
+    )
+    return render(
+        request,
+        "clinic/clinical/patient_index.html",
+        {"patients": patients},
     )
 
 
@@ -135,7 +130,7 @@ def consultation_detail(request, consultation_id):
             "revisions__previous_appointment",
         ),
         pk=consultation_id,
-        patient__in=_patients_in_clinician_care(request.user.staff_profile),
+        patient__in=patients_in_clinician_care(request.user.staff_profile),
     )
     return render(
         request,
@@ -151,7 +146,7 @@ def consultation_edit(request, consultation_id):
         Consultation.objects.select_related("patient", "appointment"),
         pk=consultation_id,
         clinician=request.user.staff_profile,
-        patient__in=_patients_in_clinician_care(request.user.staff_profile),
+        patient__in=patients_in_clinician_care(request.user.staff_profile),
     )
     clinician = request.user.staff_profile
     if request.method == "POST":
@@ -163,7 +158,7 @@ def consultation_edit(request, consultation_id):
                 ),
                 pk=consultation_id,
                 clinician=clinician,
-                patient__in=_patients_in_clinician_care(clinician),
+                patient__in=patients_in_clinician_care(clinician),
             )
             previous_values = {
                 "consultation_at": consultation.consultation_at,
