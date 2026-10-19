@@ -71,3 +71,9 @@ class Appointment(TimeStampedModel):
 
     def __str__(self):
         return f"{self.patient} at {self.appointment_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def appointment_identifier(self):
+        if self.pk is None:
+            return ""
+        return f"AP-{self.pk:06d}"

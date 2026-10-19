@@ -1,0 +1,42 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}My Profile | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Account settings</p>
+            <h1>My Profile</h1>
+            <p class="lead">View your account details and update your personal information.</p>
+        </div>
+    </div>
+
+    <dl class="staff-details">
+        <div><dt>Username</dt><dd>{{ request.user.username }}</dd></div>
+        <div><dt>Assigned role</dt><dd>{{ profile.get_role_display }}</dd></div>
+        <div>
+            <dt>Department{{ profile.departments.count|pluralize }}</dt>
+            <dd>{% for department in profile.departments.all %}{{ department.name }}{% if not forloop.last %}, {% endif %}{% empty %}Not assigned{% endfor %}</dd>
+        </div>
+        <div><dt>Staff identifier</dt><dd>{{ profile.staff_identifier|default:"Not assigned" }}</dd></div>
+    </dl>
+
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="form-errors" role="alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div>
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="field-help">{{ field.help_text }}</p>{% endif %}
+                {% if field.errors %}<ul class="errorlist" role="alert">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        <div class="button-row">
+            <button type="submit">Save profile</button>
+            <a class="button button--secondary" href="{% url 'clinic_auth:settings' %}">Back to Settings</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Settings | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Account preferences</p>
+            <h1>Settings</h1>
+            <p class="lead">Manage your account and application settings.</p>
+        </div>
+    </div>
+
+    <div class="settings-grid">
+        <a class="settings-card" href="{% url 'clinic_auth:my_profile' %}" aria-label="Open My Profile">
+            <div class="settings-card__body">
+                <div class="settings-card__heading">
+                    <span class="settings-card__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3"></circle><path d="M5 20v-1a7 7 0 0 1 14 0v1"></path></svg>
+                    </span>
+                    <div class="settings-card__text">
+                        <h2>My Profile</h2>
+                        <p>View and update your personal account information.</p>
+                    </div>
+                </div>
+            </div>
+            <span class="settings-card__arrow" aria-hidden="true">→</span>
+        </a>
+
+        <a class="settings-card" href="{% url 'clinic_auth:password_change' %}" aria-label="Open Change Password">
+            <div class="settings-card__body">
+                <div class="settings-card__heading">
+                    <span class="settings-card__icon settings-card__icon--pink" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"></path></svg>
+                    </span>
+                    <div class="settings-card__text">
+                        <h2>Change Password</h2>
+                        <p>Update your password and protect your account.</p>
+                    </div>
+                </div>
+            </div>
+            <span class="settings-card__arrow" aria-hidden="true">→</span>
+        </a>
+
+        {% if request.user.staff_profile.role == "administrator" %}
+            <a class="settings-card" href="{% url 'clinic_auth:staff_account_list' %}" aria-label="Open Manage Users">
+                <div class="settings-card__body">
+                    <div class="settings-card__heading">
+                        <span class="settings-card__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3"></circle><path d="M3 20v-1a6 6 0 0 1 12 0v1m4-12v6m-3-3h6"></path></svg>
+                        </span>
+                        <div class="settings-card__text">
+                            <h2>Manage Users</h2>
+                            <p>Create accounts, manage users, and assign roles.</p>
+                        </div>
+                    </div>
+                </div>
+                <span class="settings-card__arrow" aria-hidden="true">→</span>
+            </a>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

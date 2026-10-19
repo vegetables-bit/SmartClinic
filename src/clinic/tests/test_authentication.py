@@ -61,6 +61,92 @@ class AuthenticationAndAuthorizationTests(TestCase):
 
         self.assertRedirects(response, reverse("clinic_auth:staff_home"))
         self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertFalse(self.admin_profile.account.is_staff)
+        self.assertFalse(self.admin_profile.account.is_superuser)
+
+    def test_login_page_uses_common_smart_clinic_wording(self):
+        response = self.client.get(reverse("clinic_auth:login"))
+
+        self.assertContains(response, "<h1>Sign in to Smart Clinic</h1>", html=True)
+        self.assertContains(response, "Secure access for the clinic team")
+        self.assertContains(
+            response,
+            "clinic account username, email address, or employee identifier",
+        )
+        self.assertContains(response, reverse("clinic_auth:password_reset"))
+        self.assertNotContains(response, "Staff sign in")
+        self.assertNotContains(response, "Staff access portal")
+
+    def test_successful_login_shows_role_specific_clinic_dashboard(self):
+        profiles = [
+            self.admin_profile,
+            self.create_staff("reception", StaffProfile.Role.RECEPTIONIST),
+            self.create_staff("doctor", StaffProfile.Role.CLINICIAN),
+            self.create_staff("nurse", StaffProfile.Role.NURSE),
+        ]
+
+        for profile in profiles:
+            with self.subTest(role=profile.role):
+                self.client.logout()
+                response = self.post_login(username=profile.account.username)
+                self.assertRedirects(
+                    response,
+                    reverse("clinic_auth:staff_home"),
+                )
+                dashboard = self.client.get(response.url)
+                self.assertContains(
+                    dashboard,
+                    f"{profile.get_role_display()} dashboard",
+                )
+
+    def test_safe_next_redirects_to_an_authorized_application_page(self):
+        response = self.post_login(
+            next=reverse("clinic_auth:staff_account_list")
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("clinic_auth:staff_account_list"),
+        )
+
+    def test_application_administrator_next_to_django_admin_uses_clinic_home(self):
+        response = self.post_login(next=reverse("admin:index"))
+
+        self.assertRedirects(response, reverse("clinic_auth:staff_home"))
+        self.assertFalse(self.admin_profile.account.is_staff)
+        self.assertFalse(self.admin_profile.account.is_superuser)
+
+        admin_response = self.client.get(reverse("admin:index"))
+        self.assertRedirects(
+            admin_response,
+            f"{reverse('admin:login')}?next={reverse('admin:index')}",
+        )
+
+    def test_django_admin_remains_available_to_django_superuser(self):
+        django_admin = User.objects.create_superuser(
+            username="django-admin",
+            email="django-admin@example.test",
+            password=TEST_PASSWORD,
+        )
+        self.client.force_login(django_admin)
+
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_public_home_promotes_clinic_login_not_django_admin(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertContains(response, reverse("clinic_auth:login"))
+        self.assertNotContains(response, 'href="/admin/"')
+        self.assertContains(response, "Better coordination for every step of care.")
+        for feature in (
+            "Secure by design",
+            "People, connected",
+            "Care, coordinated",
+        ):
+            with self.subTest(feature=feature):
+                self.assertContains(response, feature)
 
     def test_invalid_credentials_return_generic_error(self):
         response = self.post_login(password="wrong password")

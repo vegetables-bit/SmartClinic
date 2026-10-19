@@ -122,6 +122,11 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Technical default only; adjust per approved clinic scheduling policy.
+APPOINTMENT_DEFAULT_DURATION_MINUTES = 30
+# Default lead time for in-app appointment reminders.
+APPOINTMENT_REMINDER_LEAD_TIME_HOURS = 24
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/

@@ -1,0 +1,73 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Appointments | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Appointment management</p>
+            <h1>Appointments</h1>
+            <p class="lead">Search and review scheduled appointments.</p>
+        </div>
+        {% if can_manage_appointments %}
+            <a class="button" href="{% url 'clinic_appointments:appointment_create' %}">Schedule appointment</a>
+        {% endif %}
+    </div>
+
+    <form method="get" class="appointment-search" role="search">
+        {% for field in search_form %}
+            <div>
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<ul class="errorlist" aria-live="polite">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        {% if search_form.non_field_errors %}<div class="form-errors" aria-live="polite">{{ search_form.non_field_errors }}</div>{% endif %}
+        <div class="button-row appointment-search__actions">
+            <button type="submit">Search</button>
+            <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Clear</a>
+        </div>
+    </form>
+
+    <div class="table-shell">
+        <table>
+            <caption class="visually-hidden">Appointments matching the selected filters</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Appointment ID</th>
+                    <th scope="col">Patient</th>
+                    <th scope="col">Date and time</th>
+                    <th scope="col">Clinician</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for appointment in appointments %}
+                    <tr>
+                        <td>{{ appointment.appointment_identifier }}</td>
+                        <td>{{ appointment.patient.full_name }}<br><span class="muted">{{ appointment.patient.patient_identifier }}</span></td>
+                        <td><time datetime="{{ appointment.appointment_at|date:'c' }}">{{ appointment.appointment_at|date:"M j, Y, P" }}</time></td>
+                        <td>{{ appointment.clinician.account.get_full_name|default:appointment.clinician.account.username }}</td>
+                        <td><span class="inline-status{% if appointment.status == 'cancelled' %} inline-status--inactive{% endif %}">{{ appointment.get_status_display }}</span></td>
+                        <td><a href="{% url 'clinic_appointments:appointment_detail' appointment.pk %}">View appointment</a></td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">No appointments match these filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if appointments.paginator.num_pages > 1 %}
+        <nav class="pagination" aria-label="Appointment list pages">
+            {% if appointments.has_previous %}
+                <a href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ appointments.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ appointments.number }} of {{ appointments.paginator.num_pages }}</span>
+            {% if appointments.has_next %}
+                <a href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ appointments.next_page_number }}">Next</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+</section>
+{% endblock %}

@@ -30,6 +30,7 @@
 | `Patient` | `clinic_patient` | Canonical demographics, generated public identifier, archive state. |
 | `Appointment` | `clinic_appointment` | Scheduled interval, patient, assigned staff clinician, status and optional visit/cancellation text. |
 | `Consultation` | `clinic_consultation` | Patient encounter notes, clinician, encounter time, optional appointment. |
+| `ConsultationRevision` | `clinic_consultationrevision` | Snapshot of prior consultation time, appointment, and text fields with the revising clinician; created when a consultation is amended. |
 | `MedicalHistoryEntry` | `clinic_medicalhistoryentry` | Discrete, attributable longitudinal history note; not a duplicate appointment note. |
 | `AppointmentNotification` | `clinic_appointmentnotification` | In-app notification/reminder record related to an appointment and optional recipient. |
 | `AuditEvent` | `clinic_auditevent` | Minimal event/actor/target metadata storage. Model creation does not create audit events automatically. |
@@ -49,6 +50,7 @@ from an abstract timestamp model. AuditEvent stores `occurred_at`.
 | Patient | `patient_identifier` unique non-editable CharField(35); `full_name` CharField(200); required `gender` CharField(20) with approved choices; optional `date_of_birth` DateField, phone CharField(30), address TextField, emergency-contact name CharField(200), emergency-contact phone CharField(30); `is_archived` BooleanField. |
 | Appointment | protected Patient and StaffProfile ForeignKeys; `appointment_at` and `ends_at` DateTimeFields; optional `reason_for_visit` and `cancellation_reason` TextFields; `status` CharField(12). |
 | Consultation | protected patient and clinician ForeignKeys; optional protected appointment ForeignKey; `consultation_at` DateTimeField; optional symptoms, diagnosis, treatment, clinician notes TextFields. |
+| ConsultationRevision | protected consultation and revising clinician ForeignKeys; optional protected previous appointment ForeignKey; prior consultation time and symptoms, diagnosis, treatment, clinician-notes fields; timestamps. |
 | MedicalHistoryEntry | protected patient and author ForeignKeys; required `entry_text` TextField; optional `effective_date` DateField; `recorded_at` DateTimeField. |
 | AppointmentNotification | protected appointment ForeignKey; optional user recipient ForeignKey (`SET_NULL`); `notification_type` CharField(50); optional `scheduled_for` and `read_at` DateTimeFields. |
 | AuditEvent | optional actor user ForeignKey (`SET_NULL`); `action` CharField(100); `occurred_at` DateTimeField; optional ContentType ForeignKey (`SET_NULL`) and `object_id` CharField(64); `metadata` JSONField. |
@@ -94,6 +96,9 @@ Database constraints:
 - Appointment status limited to Scheduled, Confirmed, Attended, Completed,
   Cancelled, or Missed.
 - Appointment `ends_at` strictly later than `appointment_at`.
+- A non-null recipient may have only one `appointment_reminder` notification
+  per appointment; other notification types and recipient-less historical rows
+  are not covered by this conditional unique constraint.
 - One-to-one user/profile uniqueness is provided by Django's OneToOneField.
 
 Explicit query indexes:
@@ -105,11 +110,23 @@ Explicit query indexes:
 - Notification by recipient/read time.
 - Audit event by actor/time, action/time, and generic target.
 
+The `reconcile_appointment_reminders` management command creates a reminder
+when the configured lead-time point is reached, updates reminders after a
+reschedule, and removes reminders for cancelled, past, or otherwise ineligible
+appointments. It must be invoked periodically by an external scheduler; Django
+does not run the command automatically. See
+[appointment_reminders.md](./appointment_reminders.md) for invocation and
+polling-delay details.
+
 Unique fields and foreign keys also receive database indexes as appropriate.
-There is no constraint preventing overlapping appointment intervals. Overlap
-prevention depends on duration, buffers, availability, time zone, and
-double-booking behavior, whose exact values are not detailed in M01. No claim
-of conflict prevention is made.
+There is no database constraint preventing overlapping appointment intervals.
+M07 performs application-level conflict validation for overlapping half-open
+intervals on the same patient or clinician, excluding cancelled records. The
+configurable technical default slot duration is 30 minutes
+(`APPOINTMENT_DEFAULT_DURATION_MINUTES`); existing durations are preserved
+when an appointment is edited. There are no buffers, clinic-hours, or provider
+availability rules. SQLite does not provide a database exclusion constraint
+for these intervals, so simultaneous conflicting writes remain a limitation.
 
 ## 6. Appointment status representation
 
@@ -124,10 +141,11 @@ Stored lowercase values and display labels:
 | `cancelled` | Cancelled |
 | `missed` | Missed |
 
-A database check rejects values outside this set. The database does not enforce
-which transition is allowed from a previous status; no status transition
-service or policy is implemented in M02. M07/M08 workflow design must obtain
-approval and enforce transitions.
+A database check rejects values outside this set. M07 allows managers to
+cancel appointments only from `scheduled` and `confirmed`; it does not permit
+editing or cancelling terminal/clinical states. Attendance, completion, and
+missed-state transitions are not implemented in M07. Cancellation is retained
+on the appointment and recorded in the existing AuditEvent table.
 
 ## 7. Patient identifier strategy
 
@@ -169,22 +187,29 @@ call validation and use transactions as appropriate.
 
 Likewise, Django `choices` without an explicit check, string length validators,
 phone/date plausibility, patient duplicate matching, role authorization,
-appointment transitions, overlapping intervals, cancellation policy, and
-notification scheduling are not automatically enforced by database schema.
+appointment transition checks, overlapping intervals, cancellation policy,
+and notification scheduling are not automatically enforced by database schema.
 
 ## 10. Known limitations and deferred rules
 
 - M01 is approved. The patient demographic set includes the required `gender`
   field, and the current implementation follows the approved role matrix.
   Additional workflow-specific rules remain deferred to later milestones.
-- No workflow, permission enforcement, or user interface exists.
-- No previous consultation version history exists; timestamps alone do not
-  preserve earlier clinical text edits.
+- Consultation and medical-history create, detail, and history workflows use
+  the existing models and are restricted by clinician role and assigned-care
+  scope. An additive `ConsultationRevision` model stores previous consultation
+  values and the revising clinician before an authorized amendment. No
+  existing clinical records are rewritten by this migration.
+- Consultation amendments retain their previous version; separate medical
+  history entries remain append-only and have no edit/delete workflow.
 - AuditEvent has no automatic event writer, immutability guarantee, or
   tamper-protection. Do not put secrets or clinical-note contents in metadata.
-- Appointment conflict checking, availability, cancellation transitions,
-  missed-appointment threshold, reminder creation/delivery, data-retention
-  schedule, backups/restores, and deployment security are deferred.
+- Appointment conflict checks are application-level and do not prevent every
+  concurrent-write race in SQLite. Availability, cancellation windows,
+  attendance/completion/missed transitions, external reminder delivery,
+  data-retention schedule, backups/restores, and deployment security are
+  deferred. Reminder record generation is implemented, but requires an
+  external scheduler invocation.
 - SQLite is for local development; concurrent use and production database
   selection have not been assessed.
 - No real patient data should be used for testing or demonstration.

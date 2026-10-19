@@ -1,0 +1,27 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Add history entry | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+    <p class="eyebrow">Clinical record</p>
+    <h1>Add medical history entry</h1>
+    <p class="lead">Patient: {{ patient.full_name }} ({{ patient.patient_identifier }})</p>
+
+    <form method="post" class="form-grid clinical-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="field-error" role="alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div>
+                {{ field.label_tag }}
+                {{ field }}
+                {% if field.errors %}<div class="field-error" role="alert">{{ field.errors }}</div>{% endif %}
+            </div>
+        {% endfor %}
+        <div class="button-row">
+            <button type="submit">Save history entry</button>
+            <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' patient.patient_identifier %}">Cancel</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

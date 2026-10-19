@@ -1,0 +1,88 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Medical history | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Clinical record</p>
+            <h1>Medical history</h1>
+            <p class="lead">{{ patient.full_name }} <span class="muted">({{ patient.patient_identifier }})</span></p>
+        </div>
+        {% if patient.is_archived %}
+            <span class="inline-status inline-status--inactive">Archived</span>
+        {% endif %}
+    </div>
+
+    <div class="button-row">
+        <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Back to appointments</a>
+        {% if not patient.is_archived %}
+            <a class="button" href="{% url 'clinic_clinical:consultation_create' patient.patient_identifier %}">Record consultation</a>
+            <a class="button button--secondary" href="{% url 'clinic_clinical:medical_history_entry_create' patient.patient_identifier %}">Add history entry</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="panel">
+    <div class="section-heading">
+        <p class="eyebrow">Consultations</p>
+        <h2>Consultation history</h2>
+    </div>
+    {% if consultations %}
+        <div class="clinical-record-list">
+            {% for consultation in consultations %}
+                <article class="clinical-record-card">
+                    <div class="clinical-record-meta">
+                        <div>
+                            <h3><time datetime="{{ consultation.consultation_at|date:'c' }}">{{ consultation.consultation_at|date:"M j, Y, P" }}</time></h3>
+                            <p>Recorded by {{ consultation.clinician.account.get_full_name|default:consultation.clinician.account.username }}</p>
+                        </div>
+                        {% if consultation.appointment %}
+                            <span class="inline-status">{{ consultation.appointment.appointment_identifier }}</span>
+                        {% endif %}
+                    </div>
+                    {% if consultation.diagnosis %}
+                        <p><strong>Diagnosis</strong><br>{{ consultation.diagnosis|linebreaksbr }}</p>
+                    {% endif %}
+                    {% if consultation.symptoms %}
+                        <p><strong>Symptoms</strong><br>{{ consultation.symptoms|linebreaksbr }}</p>
+                    {% endif %}
+                    {% if consultation.treatment %}
+                        <p><strong>Treatment</strong><br>{{ consultation.treatment|linebreaksbr }}</p>
+                    {% endif %}
+                    <a href="{% url 'clinic_clinical:consultation_detail' consultation.pk %}">View consultation details</a>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>No consultations have been recorded for this patient.</p>
+        </div>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="section-heading">
+        <p class="eyebrow">Longitudinal notes</p>
+        <h2>Medical history entries</h2>
+    </div>
+    {% if history_entries %}
+        <div class="clinical-record-list">
+            {% for entry in history_entries %}
+                <article class="clinical-record-card">
+                    <div class="clinical-record-meta">
+                        <div>
+                            <h3>{% if entry.effective_date %}<time datetime="{{ entry.effective_date|date:'Y-m-d' }}">{{ entry.effective_date|date:"M j, Y" }}</time>{% else %}Undated history{% endif %}</h3>
+                            <p>Recorded {{ entry.recorded_at|date:"M j, Y, P" }} by {{ entry.author.account.get_full_name|default:entry.author.account.username }}</p>
+                        </div>
+                    </div>
+                    <p>{{ entry.entry_text|linebreaksbr }}</p>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>No separate medical history entries have been recorded.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

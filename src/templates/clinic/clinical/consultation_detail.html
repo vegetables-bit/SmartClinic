@@ -1,0 +1,61 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Consultation details | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Clinical record</p>
+            <h1>Consultation details</h1>
+            <p class="lead">{{ consultation.patient.full_name }} <span class="muted">({{ consultation.patient.patient_identifier }})</span></p>
+        </div>
+        {% if consultation.appointment %}
+            <span class="inline-status">{{ consultation.appointment.appointment_identifier }}</span>
+        {% endif %}
+    </div>
+
+    <dl class="patient-details">
+        <div><dt>Consultation date and time</dt><dd><time datetime="{{ consultation.consultation_at|date:'c' }}">{{ consultation.consultation_at|date:"M j, Y, P" }}</time></dd></div>
+        <div><dt>Clinician</dt><dd>{{ consultation.clinician.account.get_full_name|default:consultation.clinician.account.username }}</dd></div>
+        {% if consultation.symptoms %}<div class="clinical-detail--wide"><dt>Symptoms</dt><dd>{{ consultation.symptoms|linebreaksbr }}</dd></div>{% endif %}
+        {% if consultation.diagnosis %}<div class="clinical-detail--wide"><dt>Diagnosis</dt><dd>{{ consultation.diagnosis|linebreaksbr }}</dd></div>{% endif %}
+        {% if consultation.treatment %}<div class="clinical-detail--wide"><dt>Treatment</dt><dd>{{ consultation.treatment|linebreaksbr }}</dd></div>{% endif %}
+        {% if consultation.clinician_notes %}<div class="clinical-detail--wide"><dt>Clinician notes</dt><dd>{{ consultation.clinician_notes|linebreaksbr }}</dd></div>{% endif %}
+    </dl>
+
+    <div class="button-row">
+        <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' consultation.patient.patient_identifier %}">Back to medical history</a>
+        {% if request.user.staff_profile.pk == consultation.clinician_id %}
+            <a class="button" href="{% url 'clinic_clinical:consultation_edit' consultation.pk %}">Amend consultation</a>
+        {% endif %}
+    </div>
+</section>
+
+{% if consultation.revisions.all %}
+    <section class="panel">
+        <div class="section-heading">
+            <p class="eyebrow">Preserved record versions</p>
+            <h2>Amendment history</h2>
+        </div>
+        <div class="clinical-record-list">
+            {% for revision in consultation.revisions.all %}
+                <article class="clinical-record-card">
+                    <div class="clinical-record-meta">
+                        <div>
+                            <h3>Version before amendment · {{ revision.created_at|date:"M j, Y, P" }}</h3>
+                            <p>Preserved by {{ revision.revised_by.account.get_full_name|default:revision.revised_by.account.username }}</p>
+                        </div>
+                    </div>
+                    <p><strong>Consultation time</strong><br>{{ revision.previous_consultation_at|date:"M j, Y, P" }}</p>
+                    {% if revision.previous_appointment %}
+                        <p><strong>Related appointment</strong><br>{{ revision.previous_appointment.appointment_identifier }}</p>
+                    {% endif %}
+                    {% if revision.previous_symptoms %}<p><strong>Symptoms</strong><br>{{ revision.previous_symptoms|linebreaksbr }}</p>{% endif %}
+                    {% if revision.previous_diagnosis %}<p><strong>Diagnosis</strong><br>{{ revision.previous_diagnosis|linebreaksbr }}</p>{% endif %}
+                    {% if revision.previous_treatment %}<p><strong>Treatment</strong><br>{{ revision.previous_treatment|linebreaksbr }}</p>{% endif %}
+                    {% if revision.previous_clinician_notes %}<p><strong>Clinician notes</strong><br>{{ revision.previous_clinician_notes|linebreaksbr }}</p>{% endif %}
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+{% endblock %}

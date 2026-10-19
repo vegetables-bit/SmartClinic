@@ -198,6 +198,29 @@ narrow technical or workflow detail, not a pending approval of M01:
 - Applicable usability/accessibility acceptance targets and performance
   thresholds.
 
+### M07 implementation decisions for narrow gaps
+
+These implementation choices make the approved M01 appointment requirements
+testable without changing their scope or claiming that missing operational
+policies were approved:
+
+- Appointment slots use the configurable
+  `APPOINTMENT_DEFAULT_DURATION_MINUTES` setting (30-minute development
+  default). Existing appointment durations remain unchanged during ordinary
+  edits. Clinic hours, buffers, and provider availability are not inferred.
+- Conflicts use half-open intervals `[start, end)`, so an appointment may
+  start exactly when another ends. Active appointments conflict when either
+  their patient or clinician is already booked; cancelled appointments are
+  excluded. This check is application-level in SQLite.
+- Administrators and Receptionists manage appointment logistics. Clinicians
+  may view only their own assigned appointments; Nurses have no appointment
+  route access in M07.
+- M07 permits cancellation from Scheduled or Confirmed only. Other attendance,
+  completion, and missed-state transitions are deferred rather than assigned
+  to a role without a specific approved transition workflow.
+- The displayed appointment identifier is a stable `AP-` prefix plus a
+  zero-padded database primary key; no new identifier column is required.
+
 ## 7. Approval and traceability
 
 The current content reflects the approved M01 scope and the implementation in

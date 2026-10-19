@@ -1,6 +1,6 @@
 from .appointments import Appointment
 from .audit import AuditEvent
-from .clinical import Consultation, MedicalHistoryEntry
+from .clinical import Consultation, ConsultationRevision, MedicalHistoryEntry
 from .notifications import AppointmentNotification
 from .organization import Department, StaffProfile
 from .patients import Patient
@@ -10,6 +10,7 @@ __all__ = [
     "AppointmentNotification",
     "AuditEvent",
     "Consultation",
+    "ConsultationRevision",
     "Department",
     "MedicalHistoryEntry",
     "Patient",

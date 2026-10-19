@@ -309,3 +309,43 @@ class StaffSearchForm(forms.Form):
         if any(ord(character) < 32 or ord(character) == 127 for character in query):
             raise ValidationError("Search must not contain control characters.")
         return query
+
+
+class MyProfileForm(forms.Form):
+    first_name = forms.CharField(max_length=150, label="First name")
+    last_name = forms.CharField(max_length=150, label="Last name")
+    email = forms.EmailField()
+    phone_number = forms.CharField(max_length=30, required=False)
+
+    def __init__(self, *args, account, profile, **kwargs):
+        self.account = account
+        self.profile = profile
+        super().__init__(*args, **kwargs)
+        if not self.is_bound:
+            self.initial.update(
+                {
+                    "first_name": account.first_name,
+                    "last_name": account.last_name,
+                    "email": account.email,
+                    "phone_number": profile.phone_number,
+                }
+            )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip()
+        if User.objects.filter(email__iexact=email).exclude(pk=self.account.pk).exists():
+            raise ValidationError("An account with this email address already exists.")
+        return email
+
+    def save(self):
+        if not self.is_valid():
+            raise ValueError("Profile form must be valid before saving.")
+
+        self.account.first_name = self.cleaned_data["first_name"].strip()
+        self.account.last_name = self.cleaned_data["last_name"].strip()
+        self.account.email = self.cleaned_data["email"]
+        self.account.save(update_fields=("first_name", "last_name", "email"))
+
+        self.profile.phone_number = self.cleaned_data["phone_number"].strip()
+        self.profile.save(update_fields=("phone_number", "updated_at"))
+        return self.profile

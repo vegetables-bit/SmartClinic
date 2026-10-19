@@ -1,33 +1,78 @@
 {% extends "clinic/auth/base.html" %}
-{% block title %}Staff dashboard | Smart Clinic{% endblock %}
+{% block title %}{{ dashboard_title }} | Smart Clinic{% endblock %}
 {% block content %}
-<section class="panel">
+<section class="panel dashboard-welcome">
+    <p class="eyebrow">Your Smart Clinic workspace</p>
     <div class="page-header">
         <div>
-            <h1>Staff dashboard</h1>
+            <h1>{{ dashboard_title }}</h1>
             <p class="lead">Welcome back, {{ request.user.get_full_name|default:request.user.username }}.</p>
         </div>
         <span class="inline-status">{{ request.user.staff_profile.get_role_display }}</span>
     </div>
 
-    <div class="stats-grid">
+    <div class="stats-grid dashboard-stats">
         <div class="stat-card">
-            <div class="stat-card__label">Role</div>
+            <div class="stat-card__topline">
+                <span class="stat-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3"></circle><path d="M5 20v-1a7 7 0 0 1 14 0v1"></path></svg>
+                </span>
+                <div class="stat-card__label">Role</div>
+            </div>
             <div class="stat-card__value">{{ request.user.staff_profile.get_role_display }}</div>
         </div>
         <div class="stat-card">
-            <div class="stat-card__label">Status</div>
+            <div class="stat-card__topline">
+                <span class="stat-card__icon stat-card__icon--pink" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false"><path d="m5 12 4 4L19 6"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                </span>
+                <div class="stat-card__label">Status</div>
+            </div>
             <div class="stat-card__value">Active</div>
         </div>
         <div class="stat-card">
-            <div class="stat-card__label">Access</div>
+            <div class="stat-card__topline">
+                <span class="stat-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+                </span>
+                <div class="stat-card__label">Access</div>
+            </div>
             <div class="stat-card__value">Protected</div>
         </div>
     </div>
 </section>
 
 <section class="panel panel--compact">
-    <h2>Quick actions</h2>
+    <div class="section-heading section-heading--inline">
+        <div>
+            <p class="eyebrow">Your reminders</p>
+            <h2>Upcoming appointments</h2>
+        </div>
+        <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_reminders' %}">View all reminders</a>
+    </div>
+    {% if upcoming_reminders %}
+        <ul class="simple-list">
+            {% for reminder in upcoming_reminders %}
+                <li>
+                    <strong>{{ reminder.appointment.patient.full_name }}</strong>
+                    <span>{{ reminder.appointment.appointment_at|date:"M j, Y, P" }}</span>
+                    <a href="{% url 'clinic_appointments:appointment_detail' reminder.appointment_id %}">Open appointment</a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No unread appointment reminders are currently scheduled.</p>
+    {% endif %}
+</section>
+
+<section class="panel panel--compact">
+    <div class="section-heading section-heading--inline">
+        <div>
+            <p class="eyebrow">Get started</p>
+            <h2>Quick actions</h2>
+        </div>
+        <p>Shortcuts for your current role.</p>
+    </div>
     <div class="button-row">
         <a class="button" href="{% url 'clinic_auth:password_change' %}">Change password</a>
         {% if request.user.staff_profile.role == "administrator" %}

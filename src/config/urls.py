@@ -22,6 +22,8 @@ from config.views import home
 urlpatterns = [
     path('accounts/', include('clinic.auth_urls')),
     path('patients/', include('clinic.patient_urls')),
+    path('appointments/', include('clinic.appointment_urls')),
+    path('clinical/', include('clinic.clinical_urls')),
     path('', home, name='home'),
     path('admin/', admin.site.urls),
 ]

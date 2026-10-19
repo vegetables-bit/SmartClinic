@@ -2,9 +2,10 @@
 
 A web-based Smart Clinic Appointment and Patient Records Tracking System. The
 project currently provides staff authentication and management, a shared
-responsive interface, and demographic patient registration and management.
-Appointment, consultation, medical-history, reminders, reporting, and dashboard
-workflows are not implemented.
+responsive interface, demographic patient registration and management, and
+appointment scheduling and management, with scheduled in-app appointment
+reminder generation and reconciliation, and clinician-scoped consultation and
+medical-history workflows. Reporting and richer dashboards are not implemented.
 
 ## Prerequisites
 
@@ -26,7 +27,7 @@ project CSS without a separate UI framework.
 ├── src/
 │   ├── clinic/           # Database models grouped into focused modules
 │   ├── config/           # Django settings, URLs, and WSGI/ASGI entry points
-│   ├── templates/        # Shared auth shell, landing page, and patient pages
+│   ├── templates/        # Shared shell, patient, staff, and appointment pages
 │   └── manage.py         # Django management commands
 ├── .gitignore
 ├── requirements.txt
@@ -34,8 +35,8 @@ project CSS without a separate UI framework.
 ```
 
 The `config` package contains project configuration. The `clinic` application
-contains the existing data models and implemented staff and patient
-functionality.
+contains the existing data models and implemented staff, patient, and
+appointment functionality.
 
 The project requirements and role model are approved and reflected in the
 current implementation. See `docs/requirements.md` for the approved baseline,
@@ -88,10 +89,12 @@ Database model tests are available under `src/clinic/tests/`. More tests should
 be added with each future application and workflow.
 
 The project implements M03 authentication and authorization, the M04 shared
-interface shell, M05 demographic patient management, and M06 healthcare staff
-management. See
-`docs/authentication_and_authorization.md`, `docs/patient_management.md`, and
-the milestone reports in `reports/` for behavior and verification evidence.
+interface shell, M05 demographic patient management, M06 healthcare staff
+management, M07 appointment management, M08 scheduled in-app appointment
+reminders, and M09 clinician-scoped consultation and medical history. Reminder
+generation requires an external scheduler; see `docs/appointment_reminders.md`.
+See `docs/authentication_and_authorization.md`, `docs/patient_management.md`,
+and the milestone reports in `reports/` for behavior and verification evidence.
 
 ## Planned milestones
 
@@ -105,8 +108,15 @@ the milestone reports in `reports/` for behavior and verification evidence.
    `reports/MILESTONE_05_REPORT.md`)
 7. **Milestone 06 — Healthcare staff management** (implemented; see
    `reports/MILESTONE_06_REPORT.md`)
-8. **Milestone 07 onward — Appointments, consultation, reporting, and
-   integration workflows** (not started)
+8. **Milestone 07 — Appointment management** (implemented; see
+   `reports/MILESTONE_07_REPORT.md`)
+9. **Milestone 08 — Appointment reminders** (implemented with periodic
+   external scheduler invocation; attendance/completion/missed transitions
+   remain deferred)
+10. **Milestone 09 — Consultation and medical history** (implemented with
+    clinician-scoped access; nursing workflow remains outside scope)
+11. **Milestone 10 onward — Reporting and integration workflows** (not started)
 
-M01 remains approved and authoritative. Milestone 07 and later workflows have
-not been started in this working branch.
+M01 remains approved and authoritative. The M08 reminder command is not
+automatically run by Django; deployment must configure a scheduler. Later
+reporting and integration workflows have not been started.

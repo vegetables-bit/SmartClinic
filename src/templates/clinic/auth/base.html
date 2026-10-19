@@ -12,29 +12,55 @@
         {% if request.user.is_authenticated %}
             <aside class="app-sidebar" aria-label="Main navigation">
                 <div class="brand-lockup">
-                    <span class="brand-mark">SC</span>
-                    <span>Smart Clinic</span>
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"></path>
+                        </svg>
+                    </span>
+                    <span class="brand-lockup__text">Smart Clinic<small>Care coordination</small></span>
                 </div>
 
                 <nav class="app-nav" aria-label="Staff navigation">
-                    <a class="nav-link {% if request.resolver_match and request.resolver_match.view_name == 'clinic_auth:staff_home' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_home' %}">Home</a>
-                    <a class="nav-link {% if request.resolver_match and request.resolver_match.view_name == 'clinic_auth:password_change' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:password_change' %}">Change password</a>
+                    <a class="nav-link {% if request.resolver_match and request.resolver_match.view_name == 'clinic_auth:staff_home' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_home' %}" {% if request.resolver_match and request.resolver_match.view_name == 'clinic_auth:staff_home' %}aria-current="page"{% endif %}>
+                        <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"></path></svg><span>Home</span>
+                    </a>
                     {% if request.user.staff_profile.role == 'administrator' or request.user.staff_profile.role == 'receptionist' %}
-                        <a class="nav-link {% if request.resolver_match and request.resolver_match.namespace == 'clinic_patients' %}nav-link--active{% endif %}" href="{% url 'clinic_patients:patient_list' %}">Patients</a>
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.namespace == 'clinic_patients' %}nav-link--active{% endif %}" href="{% url 'clinic_patients:patient_list' %}" {% if request.resolver_match and request.resolver_match.namespace == 'clinic_patients' %}aria-current="page"{% endif %}>
+                            <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"></circle><path d="M3 20v-1a6 6 0 0 1 12 0v1m2-9a3 3 0 1 0 0-6m1 9a5 5 0 0 1 3 4v1"></path></svg><span>Patients</span>
+                        </a>
+                    {% endif %}
+                    {% if request.user.staff_profile.role == 'administrator' or request.user.staff_profile.role == 'receptionist' or request.user.staff_profile.role == 'clinician' %}
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.namespace == 'clinic_appointments' %}nav-link--active{% endif %}" href="{% url 'clinic_appointments:appointment_list' %}" {% if request.resolver_match and request.resolver_match.namespace == 'clinic_appointments' %}aria-current="page"{% endif %}>
+                            <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18m-13 4h3m-3 3h7"></path></svg><span>Appointments</span>
+                        </a>
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.url_name == 'appointment_reminders' %}nav-link--active{% endif %}" href="{% url 'clinic_appointments:appointment_reminders' %}" {% if request.resolver_match and request.resolver_match.url_name == 'appointment_reminders' %}aria-current="page"{% endif %}>
+                            <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2a7 7 0 0 1 7 7v3.3l2.1 4.1a1 1 0 0 1-.9 1.5H3.8a1 1 0 0 1-.9-1.5L5 12.3V9a7 7 0 0 1 7-7zm0 20a2.5 2.5 0 0 1-2.5-2.5h5A2.5 2.5 0 0 1 12 22z"></path></svg><span>Reminders</span>
+                        </a>
                     {% endif %}
                     {% if request.user.staff_profile.role == 'administrator' %}
-                        <a class="nav-link {% if request.resolver_match and request.resolver_match.url_name == 'staff_account_list' or request.resolver_match.url_name == 'staff_account_profile' or request.resolver_match.url_name == 'staff_account_edit' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_account_list' %}">Staff directory</a>
+                        <a class="nav-link {% if request.resolver_match and request.resolver_match.url_name == 'staff_account_list' or request.resolver_match.url_name == 'staff_account_profile' or request.resolver_match.url_name == 'staff_account_edit' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:staff_account_list' %}" {% if request.resolver_match and request.resolver_match.url_name == 'staff_account_list' or request.resolver_match.url_name == 'staff_account_profile' or request.resolver_match.url_name == 'staff_account_edit' %}aria-current="page"{% endif %}>
+                            <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"></circle><path d="M3 20v-1a6 6 0 0 1 12 0v1m4-12v6m-3-3h6"></path></svg><span>Staff directory</span>
+                        </a>
                     {% endif %}
+                    <a class="nav-link {% if request.resolver_match and request.resolver_match.url_name == 'settings' or request.resolver_match.url_name == 'my_profile' %}nav-link--active{% endif %}" href="{% url 'clinic_auth:settings' %}" {% if request.resolver_match and request.resolver_match.url_name == 'settings' or request.resolver_match.url_name == 'my_profile' %}aria-current="page"{% endif %}>
+                        <svg class="nav-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 3.1-.2-.1a1.7 1.7 0 0 0-1.9.3l-.1.1h-3.6l-.1-.2a1.7 1.7 0 0 0-1.6-1.1 1.7 1.7 0 0 0-1.1.4l-.1.1-3.1-1.8.1-.2a1.7 1.7 0 0 0-.3-1.9l-.1-.1v-3.6l.2-.1a1.7 1.7 0 0 0 1.1-1.6 1.7 1.7 0 0 0-.4-1.1l-.1-.1 1.8-3.1.2.1a1.7 1.7 0 0 0 1.9-.3l.1-.1h3.6l.1.2a1.7 1.7 0 0 0 1.6 1.1 1.7 1.7 0 0 0 1.1-.4l.1-.1 3.1 1.8-.1.2a1.7 1.7 0 0 0 .3 1.9l.1.1v3.6z"></path></svg><span>Settings</span>
+                    </a>
                 </nav>
 
                 <div class="app-sidebar__meta">
-                    <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
-                    {% if request.user.staff_profile %}
-                        <span>{{ request.user.staff_profile.get_role_display }}</span>
-                    {% endif %}
+                    <div class="account-summary">
+                        <span class="account-summary__avatar" aria-hidden="true">{{ request.user.get_full_name|default:request.user.username|slice:":1"|upper }}</span>
+                        <span class="account-summary__identity">
+                            <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+                            {% if request.user.staff_profile %}<span>{{ request.user.staff_profile.get_role_display }}</span>{% endif %}
+                        </span>
+                    </div>
                     <form method="post" action="{% url 'clinic_auth:logout' %}">
                         {% csrf_token %}
-                        <button type="submit" class="button button--ghost">Sign out</button>
+                        <button type="submit" class="button button--ghost logout-button" aria-label="Sign out">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 17l5-5-5-5m5 5H3m9-9h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"></path></svg>
+                            <span>Sign out</span>
+                        </button>
                     </form>
                 </div>
             </aside>
@@ -42,7 +68,7 @@
             <header class="guest-header">
                 <div class="guest-header__inner">
                     <div class="guest-brand">Smart Clinic</div>
-                    <div>Staff access portal</div>
+                    <div>Secure access for the clinic team</div>
                 </div>
             </header>
         {% endif %}

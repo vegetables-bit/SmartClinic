@@ -1,0 +1,32 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ page_title }} | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+    <p class="eyebrow">Appointment management</p>
+    <h1>{{ page_title }}</h1>
+    <p class="lead">Appointments use a {{ appointment_duration_minutes }}-minute slot.</p>
+
+    <form method="post" class="form-grid appointment-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="form-errors" aria-live="polite">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div class="appointment-form__field{% if field.name == 'reason_for_visit' %} appointment-form__field--wide{% endif %}">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="field-help">{{ field.help_text }}</p>{% endif %}
+                {% if field.errors %}<ul class="errorlist" aria-live="polite">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        <div class="button-row appointment-form__actions">
+            <button type="submit">{% if appointment %}Save changes{% else %}Schedule appointment{% endif %}</button>
+            {% if appointment %}
+                <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_detail' appointment.pk %}">Cancel</a>
+            {% else %}
+                <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Cancel</a>
+            {% endif %}
+        </div>
+    </form>
+</section>
+{% endblock %}

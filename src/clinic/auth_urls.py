@@ -15,6 +15,8 @@ from clinic.auth_views import (
     staff_account_profile,
     staff_account_status,
     staff_home,
+    settings_page,
+    my_profile,
 )
 
 app_name = "clinic_auth"
@@ -23,6 +25,8 @@ urlpatterns = [
     path("login/", StaffLoginView.as_view(), name="login"),
     path("logout/", StaffLogoutView.as_view(), name="logout"),
     path("home/", staff_home, name="staff_home"),
+    path("settings/", settings_page, name="settings"),
+    path("settings/profile/", my_profile, name="my_profile"),
     path("password/change/", StaffPasswordChangeView.as_view(), name="password_change"),
     path(
         "password/change/done/",

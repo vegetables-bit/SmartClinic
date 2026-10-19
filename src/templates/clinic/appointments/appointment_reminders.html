@@ -1,0 +1,61 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Appointment reminders | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Appointment reminders</p>
+            <h1>Reminders</h1>
+            <p class="lead">Upcoming appointment notices for your assigned schedule.</p>
+        </div>
+        <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Back to appointments</a>
+    </div>
+
+    {% if notifications %}
+        <div class="table-shell">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Appointment</th>
+                        <th scope="col">Patient</th>
+                        <th scope="col">Scheduled for</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for notification in notifications %}
+                        <tr>
+                            <td>{{ notification.appointment.appointment_identifier }}</td>
+                            <td>{{ notification.appointment.patient.full_name }}<br><span class="muted">{{ notification.appointment.patient.patient_identifier }}</span></td>
+                            <td><time datetime="{{ notification.scheduled_for|date:'c' }}">{{ notification.scheduled_for|date:"M j, Y, P" }}</time></td>
+                            <td>
+                                {% if notification.read_at %}
+                                    <span class="inline-status inline-status--inactive">Read</span>
+                                {% else %}
+                                    <span class="inline-status">Unread</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="button-row button-row--compact">
+                                    <a href="{% url 'clinic_appointments:appointment_detail' notification.appointment_id %}">Open</a>
+                                    {% if not notification.read_at %}
+                                        <form method="post" action="{% url 'clinic_appointments:appointment_reminder_mark_read' notification.pk %}">
+                                            {% csrf_token %}
+                                            <button type="submit" class="button button--secondary">Mark read</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <p>No appointment reminders are available for your account right now.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

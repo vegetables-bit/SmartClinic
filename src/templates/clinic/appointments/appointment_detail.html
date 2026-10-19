@@ -1,0 +1,50 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ appointment_identifier }} | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Appointment details</p>
+            <h1>{{ appointment_identifier }}</h1>
+            <p class="lead">
+                <time datetime="{{ appointment.appointment_at|date:'c' }}">{{ appointment.appointment_at|date:"l, F j, Y, P" }}</time>
+            </p>
+        </div>
+        <span class="inline-status{% if appointment.status == 'cancelled' %} inline-status--inactive{% endif %}">{{ appointment.get_status_display }}</span>
+    </div>
+
+    <dl class="appointment-details">
+        <div><dt>Patient</dt><dd>{{ appointment.patient.full_name }} <span class="muted">({{ appointment.patient.patient_identifier }})</span></dd></div>
+        <div><dt>Clinician</dt><dd>{{ appointment.clinician.account.get_full_name|default:appointment.clinician.account.username }}</dd></div>
+        <div><dt>Start</dt><dd>{{ appointment.appointment_at|date:"M j, Y, P" }}</dd></div>
+        <div><dt>End</dt><dd>{{ appointment.ends_at|date:"M j, Y, P" }}</dd></div>
+        <div class="appointment-details__wide"><dt>Reason for visit</dt><dd>{{ appointment.reason_for_visit|linebreaksbr }}</dd></div>
+        {% if appointment.status == "cancelled" and appointment.cancellation_reason %}
+            <div class="appointment-details__wide"><dt>Cancellation reason</dt><dd>{{ appointment.cancellation_reason|linebreaksbr }}</dd></div>
+        {% endif %}
+        <div><dt>Created</dt><dd><time datetime="{{ appointment.created_at|date:'c' }}">{{ appointment.created_at|date:"M j, Y, P" }}</time></dd></div>
+        <div><dt>Last updated</dt><dd><time datetime="{{ appointment.updated_at|date:'c' }}">{{ appointment.updated_at|date:"M j, Y, P" }}</time></dd></div>
+    </dl>
+
+    <div class="button-row appointment-detail__actions">
+        <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Back to appointments</a>
+        {% if request.user.staff_profile.role == "clinician" %}
+            <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' appointment.patient.patient_identifier %}">Patient medical history</a>
+            {% if appointment.status != "cancelled" %}
+                <a class="button" href="{% url 'clinic_clinical:consultation_create' appointment.patient.patient_identifier %}?appointment={{ appointment.pk }}">Record consultation</a>
+            {% endif %}
+        {% endif %}
+        {% if can_edit_appointment %}
+            <a class="button" href="{% url 'clinic_appointments:appointment_edit' appointment.pk %}">Edit or reschedule</a>
+        {% endif %}
+        {% if can_cancel_appointment %}
+            <form method="post" action="{% url 'clinic_appointments:appointment_cancel' appointment.pk %}" class="appointment-cancel-form">
+                {% csrf_token %}
+                <label for="cancellation_reason">Cancellation reason <span class="muted">(optional)</span></label>
+                <textarea id="cancellation_reason" name="cancellation_reason" rows="2"></textarea>
+                <button type="submit" class="button--danger">Cancel appointment</button>
+            </form>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

@@ -26,6 +26,16 @@ class AppointmentNotification(TimeStampedModel):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("appointment", "recipient", "notification_type"),
+                condition=models.Q(
+                    notification_type="appointment_reminder",
+                    recipient__isnull=False,
+                ),
+                name="clinic_unique_appt_reminder_recipient",
+            ),
+        ]
         indexes = [
             models.Index(
                 fields=["recipient", "read_at"],

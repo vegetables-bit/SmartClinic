@@ -1,9 +1,12 @@
 {% extends "clinic/auth/base.html" %}
-{% block title %}Staff sign in | Smart Clinic{% endblock %}
+{% block title %}Sign in to Smart Clinic{% endblock %}
 {% block content %}
-<section class="panel">
-    <h1>Staff sign in</h1>
-    <p class="lead">Use your staff username, email, or employee identifier and your password. Accounts are created by an administrator.</p>
+<section class="panel login-card">
+    <span class="login-card__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"></path></svg>
+    </span>
+    <h1>Sign in to Smart Clinic</h1>
+    <p class="lead">Use your clinic account username, email address, or employee identifier and your password. Access is based on your active application role.</p>
     <form method="post" class="form-grid">
         {% csrf_token %}
         {% if form.non_field_errors %}

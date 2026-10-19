@@ -24,7 +24,50 @@ This milestone implements the authentication and account-management authorizatio
 | Activate/deactivate staff access | Yes | No | No | No |
 | Change own password | Yes | Yes | Yes | Yes |
 | Access staff home | Yes | Yes | Yes | Yes |
-| Access restricted clinical workflows | Not yet implemented | Not yet implemented | Not yet implemented | Not yet implemented |
+| Access restricted clinical workflows | No routine clinical-note access | No | Assigned-care access only | Not implemented |
+
+## Appointment permissions (M07)
+
+Appointment permissions implement the approved responsibility boundaries:
+Receptionists manage appointment logistics, while clinicians can access only
+appointments assigned to them. Administrator access is limited to scheduling
+administration and does not grant clinical-record access.
+
+| Capability | Administrator | Receptionist | Doctor/Clinician | Nurse |
+| --- | --- | --- | --- | --- |
+| List/search appointments | Yes | Yes | Assigned appointments only | No |
+| View appointment details | Yes | Yes | Assigned appointments only | No |
+| Create appointments | Yes | Yes | No | No |
+| Edit/reschedule Scheduled or Confirmed appointments | Yes | Yes | No | No |
+| Cancel Scheduled or Confirmed appointments | Yes | Yes | No | No |
+| Change attendance, completion, or missed status | No | No | No | No |
+
+All appointment writes are server-authorized and protected by CSRF. Clinician
+record scope is enforced by filtering the queryset, so another clinician's
+appointment returns 404 even when its numeric URL is guessed. The appointment
+role policy was selected for M07 because M01 describes receptionist scheduling
+logistics and assigned-care clinician scope but does not enumerate appointment
+routes in the original matrix. Nurses are denied appointment routes in this
+milestone.
+
+## Consultation and medical-history permissions (M09)
+
+Consultation and patient-history routes are restricted server-side to active
+Doctor/Clinician profiles. Access is limited to a patient linked to a
+non-cancelled appointment assigned to that clinician, or to a patient for whom
+the clinician already authored a consultation or separate history entry.
+History displays the patient's consultation and longitudinal-entry records
+once that care relationship is established. A consultation can only select an
+appointment for the same patient and clinician. Only the original clinician
+can amend a consultation; the prior version is retained and visible within
+assigned-care scope.
+
+Administrators do not receive clinical-note access by virtue of their
+administrative role, and Receptionists do not receive clinical-history access.
+Nurses have no consultation/history route in this implementation: the project
+does not yet define an assignment link for nurses or a specific nursing
+documentation workflow. This is a conservative boundary, not a grant of
+unrestricted clinical access.
 
 ## Authorization rules
 

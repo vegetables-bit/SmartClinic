@@ -1,49 +1,75 @@
 {% extends "clinic/auth/base.html" %}
 
-{% block title %}Smart Clinic | Staff portal{% endblock %}
+{% block title %}Smart Clinic | Care, coordinated{% endblock %}
 
 {% block content %}
-<section class="panel hero">
-    <div class="hero__copy">
-        <p class="eyebrow">Patient operations hub</p>
-        <h1>Modern clinic coordination for every staff role.</h1>
-        <p class="lead">Smart Clinic brings together secure staff access, role-aware navigation, and a responsive shell for the next wave of patient care workflows.</p>
-        <div class="hero__actions">
-            <a class="button" href="{% url 'clinic_auth:login' %}">Staff sign in</a>
-            <a class="button button--secondary" href="/admin/">Open admin</a>
+<section class="landing-hero">
+    <div class="landing-hero__copy">
+        <div class="landing-brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"></path></svg>
+            </span>
+            <span>Smart Clinic</span>
         </div>
+        <p class="eyebrow">Thoughtful care, connected</p>
+        <h1>Better coordination for every step of care.</h1>
+        <p class="lead">A secure workspace for clinic teams to coordinate patients, appointments, and staff with clarity and care.</p>
+        <div class="hero__actions">
+            <a class="button button--large" href="{% url 'clinic_auth:login' %}">
+                <span>Sign in to Smart Clinic</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg>
+            </a>
+        </div>
+        <p class="landing-roles">For Administrators, Receptionists, Clinicians, and Nurses</p>
     </div>
 
-    <div class="hero__panel" aria-label="Clinic operations summary">
-        <div class="mini-stat">
-            <span>Roles enabled</span>
-            <strong>4</strong>
+    <div class="landing-visual" aria-hidden="true">
+        <div class="landing-visual__orb"></div>
+        <div class="care-card care-card--main">
+            <span class="care-card__icon">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M12 21s-8-4.5-8-11a4.5 4.5 0 0 1 8-2.9A4.5 4.5 0 0 1 20 10c0 6.5-8 11-8 11z"></path><path d="M8 12h2l1-2 2 4 1-2h2"></path></svg>
+            </span>
+            <span class="care-card__label">Care, connected</span>
+            <span class="care-card__line"></span>
+            <span class="care-card__line care-card__line--short"></span>
         </div>
-        <div class="mini-stat">
-            <span>Auth model</span>
-            <strong>Django built-in</strong>
-        </div>
-        <div class="mini-stat">
-            <span>Access model</span>
-            <strong>Server-side enforced</strong>
+        <div class="care-card care-card--accent">
+            <span class="care-card__dot"></span>
+            <span>Here for your team</span>
         </div>
     </div>
 </section>
 
-<section class="feature-grid">
-    <article class="feature-card panel panel--compact">
-        <h2>Secure access</h2>
-        <p>Users sign in with username, email, or staff id, and inactive staff profiles are rejected before a session is established.</p>
+<section class="landing-features" aria-labelledby="features-heading">
+    <div class="section-heading">
+        <p class="eyebrow">One calm workspace</p>
+        <h2 id="features-heading">Designed around your clinic team</h2>
+        <p>Everything starts with a shared, secure view of the work that keeps care moving.</p>
+    </div>
+    <div class="feature-grid">
+    <article class="feature-card">
+        <span class="feature-card__icon feature-card__icon--purple" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+        </span>
+        <h3>Secure by design</h3>
+        <p>Role-based access helps keep clinic information in the right hands.</p>
     </article>
 
-    <article class="feature-card panel panel--compact">
-        <h2>Role-aware routes</h2>
-        <p>Administrator-only staff management stays protected on the backend; non-admin staff see a limited experience without bypassing controls.</p>
+    <article class="feature-card">
+        <span class="feature-card__icon feature-card__icon--pink" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3"></circle><path d="M3 20v-1a6 6 0 0 1 12 0v1m2-9v6m-3-3h6"></path></svg>
+        </span>
+        <h3>People, connected</h3>
+        <p>Support clear coordination across the clinic’s authorized staff roles.</p>
     </article>
 
-    <article class="feature-card panel panel--compact">
-        <h2>Responsive shell</h2>
-        <p>The authenticated interface uses a shared clinic-shell layout that scales cleanly from desktop dashboards to smaller devices.</p>
+    <article class="feature-card">
+        <span class="feature-card__icon feature-card__icon--purple" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18m-13 4h3m-3 3h7"></path></svg>
+        </span>
+        <h3>Care, coordinated</h3>
+        <p>Bring patient and appointment workflows together in one clinic workspace.</p>
     </article>
+    </div>
 </section>
 {% endblock %}

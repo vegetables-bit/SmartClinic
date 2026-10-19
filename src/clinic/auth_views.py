@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.views import (
@@ -14,19 +16,22 @@ from django.db import transaction
 from django.db import IntegrityError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.urls import Resolver404, resolve, reverse_lazy
 from django.utils.decorators import method_decorator
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from clinic.auth_forms import (
     StaffAccountCreateForm,
     StaffAccountUpdateForm,
     StaffAuthenticationForm,
+    MyProfileForm,
     StaffPasswordResetForm,
     StaffSearchForm,
 )
 from clinic.authentication import active_staff_required, administrator_required
-from clinic.models import StaffProfile
+from clinic.appointment_reminders import REMINDER_NOTIFICATION_TYPE
+from clinic.models import AppointmentNotification, StaffProfile
 
 STAFF_PER_PAGE = 25
 
@@ -35,6 +40,19 @@ class StaffLoginView(LoginView):
     template_name = "clinic/auth/login.html"
     authentication_form = StaffAuthenticationForm
     redirect_authenticated_user = True
+
+    def get_success_url(self):
+        success_url = super().get_success_url()
+        try:
+            namespace = resolve(urlsplit(success_url).path).namespace
+        except Resolver404:
+            return success_url
+
+        if namespace == "admin" and not (
+            self.request.user.is_active and self.request.user.is_staff
+        ):
+            return str(reverse_lazy("clinic_auth:staff_home"))
+        return success_url
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
@@ -87,7 +105,60 @@ class StaffPasswordResetCompleteView(PasswordResetCompleteView):
 
 @active_staff_required
 def staff_home(request):
-    return render(request, "clinic/auth/staff_home.html")
+    profile = request.user.staff_profile
+    upcoming_reminders = (
+        AppointmentNotification.objects.filter(
+            recipient=request.user,
+            notification_type=REMINDER_NOTIFICATION_TYPE,
+            read_at__isnull=True,
+            scheduled_for__lte=timezone.now(),
+            appointment__appointment_at__gt=timezone.now(),
+            appointment__status__in=("scheduled", "confirmed"),
+            appointment__clinician__account=request.user,
+            appointment__clinician__is_active=True,
+            appointment__clinician__account__is_active=True,
+        )
+        .select_related(
+            "appointment",
+            "appointment__patient",
+            "appointment__clinician",
+            "appointment__clinician__account",
+        )
+        .order_by("scheduled_for", "-created_at")[:5]
+    )
+    return render(
+        request,
+        "clinic/auth/staff_home.html",
+        {
+            "dashboard_title": f"{profile.get_role_display()} dashboard",
+            "upcoming_reminders": upcoming_reminders,
+        },
+    )
+
+
+@active_staff_required
+def settings_page(request):
+    return render(request, "clinic/auth/settings.html")
+
+
+@active_staff_required
+def my_profile(request):
+    profile = request.user.staff_profile
+    form = MyProfileForm(
+        request.POST or None,
+        account=request.user,
+        profile=profile,
+    )
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            form.save()
+        messages.success(request, "Your profile was updated.")
+        return redirect("clinic_auth:my_profile")
+    return render(
+        request,
+        "clinic/auth/my_profile.html",
+        {"form": form, "profile": profile},
+    )
 
 
 @administrator_required

@@ -55,6 +55,37 @@ class Consultation(TimeStampedModel):
         return f"Consultation for {self.patient} at {self.consultation_at:%Y-%m-%d}"
 
 
+class ConsultationRevision(TimeStampedModel):
+    consultation = models.ForeignKey(
+        Consultation,
+        on_delete=models.PROTECT,
+        related_name="revisions",
+    )
+    revised_by = models.ForeignKey(
+        "clinic.StaffProfile",
+        on_delete=models.PROTECT,
+        related_name="consultation_revisions",
+    )
+    previous_appointment = models.ForeignKey(
+        "clinic.Appointment",
+        on_delete=models.PROTECT,
+        related_name="consultation_revisions",
+        blank=True,
+        null=True,
+    )
+    previous_consultation_at = models.DateTimeField()
+    previous_symptoms = models.TextField(blank=True)
+    previous_diagnosis = models.TextField(blank=True)
+    previous_treatment = models.TextField(blank=True)
+    previous_clinician_notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"Revision {self.pk} of consultation {self.consultation_id}"
+
+
 class MedicalHistoryEntry(TimeStampedModel):
     patient = models.ForeignKey(
         "clinic.Patient",
