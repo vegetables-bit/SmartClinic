@@ -387,6 +387,178 @@ class AppointmentManagementTests(TestCase):
         self.assertEqual(list(response.context["appointments"]), [second])
         self.assertNotIn(first, response.context["appointments"])
 
+    def test_list_filters_by_start_date_end_date_and_inclusive_range(self):
+        dates = [
+            timezone.localdate() + timedelta(days=20 + day)
+            for day in (0, 2, 4, 6)
+        ]
+        appointments = [
+            self.create_appointment(
+                appointment_date=appointment_date,
+                appointment_time=time(9),
+            )
+            for appointment_date in dates
+        ]
+        self.login_as(self.admin)
+        list_url = reverse("clinic_appointments:appointment_list")
+
+        start_only = self.client.get(
+            list_url,
+            {"start_date": dates[1].isoformat()},
+        )
+        end_only = self.client.get(
+            list_url,
+            {"end_date": dates[2].isoformat()},
+        )
+        range_response = self.client.get(
+            list_url,
+            {
+                "start_date": dates[1].isoformat(),
+                "end_date": dates[2].isoformat(),
+            },
+        )
+
+        self.assertEqual(
+            list(start_only.context["appointments"]),
+            appointments[1:],
+        )
+        self.assertEqual(
+            list(end_only.context["appointments"]),
+            appointments[:3],
+        )
+        self.assertEqual(
+            list(range_response.context["appointments"]),
+            appointments[1:3],
+        )
+
+    def test_date_range_combines_with_search_status_and_category(self):
+        start_date = timezone.localdate() + timedelta(days=30)
+        match = self.create_appointment(
+            appointment_date=start_date,
+            status=Appointment.Status.CONFIRMED,
+        )
+        self.create_appointment(
+            patient=self.other_patient,
+            appointment_date=start_date + timedelta(days=1),
+            status=Appointment.Status.CONFIRMED,
+        )
+        self.create_appointment(
+            appointment_date=start_date + timedelta(days=2),
+            status=Appointment.Status.CANCELLED,
+        )
+        self.login_as(self.admin)
+
+        response = self.client.get(
+            reverse("clinic_appointments:appointment_list"),
+            {
+                "query": self.patient.patient_identifier,
+                "start_date": start_date.isoformat(),
+                "end_date": (start_date + timedelta(days=1)).isoformat(),
+                "status": Appointment.Status.CONFIRMED,
+                "category": "upcoming",
+            },
+        )
+
+        self.assertEqual(list(response.context["appointments"]), [match])
+
+    def test_invalid_date_range_returns_form_errors(self):
+        self.login_as(self.admin)
+        list_url = reverse("clinic_appointments:appointment_list")
+
+        invalid_dates = self.client.get(
+            list_url,
+            {"start_date": "not-a-date"},
+        )
+        reversed_range = self.client.get(
+            list_url,
+            {
+                "start_date": "2026-10-22",
+                "end_date": "2026-10-21",
+            },
+        )
+
+        self.assertEqual(invalid_dates.status_code, 400)
+        self.assertIn(
+            "start_date",
+            invalid_dates.context["search_form"].errors,
+        )
+        self.assertEqual(reversed_range.status_code, 400)
+        self.assertTrue(reversed_range.context["search_form"].non_field_errors())
+
+    def test_date_range_pagination_preserves_filters_and_clinician_scope(self):
+        start_date = timezone.localdate() + timedelta(days=40)
+        for index in range(26):
+            self.create_appointment(
+                patient=self.patient if index % 2 == 0 else self.other_patient,
+                clinician=self.clinician,
+                appointment_date=start_date + timedelta(days=index),
+            )
+        params = {
+            "query": "Fictional",
+            "start_date": start_date.isoformat(),
+            "end_date": (start_date + timedelta(days=30)).isoformat(),
+            "status": Appointment.Status.SCHEDULED,
+        }
+        self.login_as(self.receptionist)
+        first_page = self.client.get(
+            reverse("clinic_appointments:appointment_list"),
+            params,
+        )
+
+        self.assertEqual(first_page.context["appointments"].paginator.count, 26)
+        self.assertContains(
+            first_page,
+            f"start_date={start_date.isoformat()}",
+        )
+        self.assertContains(
+            first_page,
+            f"end_date={(start_date + timedelta(days=30)).isoformat()}",
+        )
+        self.assertContains(
+            first_page,
+            "status=scheduled",
+        )
+        self.assertContains(
+            first_page,
+            "query=Fictional",
+        )
+
+        self.login_as(self.clinician)
+        scoped_response = self.client.get(
+            reverse("clinic_appointments:appointment_list"),
+            {
+                **params,
+                "clinician": str(self.other_clinician.pk),
+            },
+        )
+        self.assertFalse(scoped_response.context["appointments"].object_list)
+
+    def test_detail_return_navigation_accepts_only_local_list_paths(self):
+        appointment = self.create_appointment()
+        self.login_as(self.receptionist)
+        detail_url = reverse(
+            "clinic_appointments:appointment_detail",
+            args=[appointment.pk],
+        )
+
+        local_return = "/appointments/?query=PT-EXAMPLE&status=scheduled"
+        valid_response = self.client.get(
+            detail_url,
+            {"return_to": local_return},
+        )
+        unsafe_response = self.client.get(
+            detail_url,
+            {"return_to": "https://example.invalid/appointments/"},
+        )
+        wrong_path_response = self.client.get(
+            detail_url,
+            {"return_to": "/accounts/logout/"},
+        )
+
+        self.assertEqual(valid_response.context["return_url"], local_return)
+        self.assertEqual(unsafe_response.context["return_url"], "")
+        self.assertEqual(wrong_path_response.context["return_url"], "")
+
     def test_list_supports_upcoming_and_status_categories(self):
         upcoming = self.create_appointment()
         completed = self.create_appointment(
@@ -463,7 +635,7 @@ class AppointmentManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_clinician_cannot_manage_appointments_and_nurse_is_denied(self):
+    def test_nurse_has_read_only_schedule_access_while_clinician_scope_is_preserved(self):
         create_url = reverse("clinic_appointments:appointment_create")
         list_url = reverse("clinic_appointments:appointment_list")
         appointment = self.create_appointment()
@@ -478,7 +650,10 @@ class AppointmentManagementTests(TestCase):
         self.assertEqual(self.client.post(cancel_url).status_code, 403)
 
         self.login_as(self.nurse)
-        for url in (list_url, create_url, edit_url):
+        response = self.client.get(list_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.patient.patient_identifier)
+        for url in (create_url, edit_url):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 403)
         self.assertEqual(self.client.post(cancel_url).status_code, 403)

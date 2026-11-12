@@ -35,20 +35,27 @@ administration and does not grant clinical-record access.
 
 | Capability | Administrator | Receptionist | Doctor/Clinician | Nurse |
 | --- | --- | --- | --- | --- |
-| List/search appointments | Yes | Yes | Assigned appointments only | No |
-| View appointment details | Yes | Yes | Assigned appointments only | No |
+| List/search appointments | Yes | Yes | Assigned appointments only | Read-only schedule |
+| View appointment details | Yes | Yes | Assigned appointments only | Read-only, limited details |
 | Create appointments | Yes | Yes | No | No |
 | Edit/reschedule Scheduled or Confirmed appointments | Yes | Yes | No | No |
 | Cancel Scheduled or Confirmed appointments | Yes | Yes | No | No |
-| Change attendance, completion, or missed status | No | No | No | No |
+| Check in/call through queue workflow | Yes | Yes | No | Yes |
+| Start/complete assigned queue visit | Any clinic entry | No | Assigned appointments only | No |
+| Mark an appointment missed | No | No | No | No |
 
 All appointment writes are server-authorized and protected by CSRF. Clinician
 record scope is enforced by filtering the queryset, so another clinician's
 appointment returns 404 even when its numeric URL is guessed. The appointment
 role policy was selected for M07 because M01 describes receptionist scheduling
 logistics and assigned-care clinician scope but does not enumerate appointment
-routes in the original matrix. Nurses are denied appointment routes in this
-milestone.
+routes in the original matrix. The project owner approved read-only Nurse
+access to the full appointment schedule for the current baseline. Nurses
+cannot create, edit, reschedule, or cancel appointments, or access the
+administrator-only detailed appointment report or clinician-only reminder
+list. Nurses can use the aggregate operational report and queue actions
+described below. Appointment reason and cancellation-reason text are not
+displayed to Nurses.
 
 ## Consultation and medical-history permissions (M09)
 
@@ -64,10 +71,13 @@ assigned-care scope.
 
 Administrators do not receive clinical-note access by virtue of their
 administrative role, and Receptionists do not receive clinical-history access.
-Nurses have no consultation/history route in this implementation: the project
-does not yet define an assignment link for nurses or a specific nursing
-documentation workflow. This is a conservative boundary, not a grant of
-unrestricted clinical access.
+Nurses remain denied clinician consultations and longitudinal medical-history
+routes; no nurse assignment relation exists. The project owner approved a
+separate Nurse-only observation workflow, scoped to an existing appointment:
+the authenticated Nurse is recorded as author, the appointment supplies the
+patient association, and Nurses can view observations on that appointment.
+This does not grant Nurse access to clinician diagnoses, treatment plans,
+consultation notes, or medical-history entries.
 
 ## Authorization rules
 
@@ -86,11 +96,33 @@ The approved M01 requirements define the four approved staff roles and the patie
 
 | Capability | Administrator | Receptionist | Doctor/Clinician | Nurse |
 | --- | --- | --- | --- | --- |
-| List/search demographic records | Yes | Yes | No | No |
-| View demographic patient profile | Yes | Yes | No | No |
+| List/search demographic records | Yes | Yes | No | Active records, read-only |
+| View demographic patient profile | Yes | Yes | No | Active records, read-only |
 | Register patient | Yes | Yes | No | No |
 | Edit patient demographics | Yes | Yes | No | No |
 | Archive or restore patient | Yes | No | No | No |
 | View clinical notes/history through M05 pages | No | No | No | No |
 
 Archive and restore are soft state changes, require POST and CSRF protection, and are restricted to administrators. No patient delete operation is offered. The M05 list and profile do not expose clinical notes or history. These permissions are enforced server-side and remain aligned with the approved role model.
+
+The project owner approved read-only Nurse access to active demographic
+directory/profile records for the current baseline. Nurses cannot view archived
+records, register patients, edit demographics, archive/restore records, or
+access clinical history through these routes.
+
+## Queue and operational-report permissions
+
+| Capability | Administrator | Receptionist | Doctor/Clinician | Nurse |
+| --- | --- | --- | --- | --- |
+| View today's queue | Yes | Yes | Assigned appointments only | Yes |
+| Check in a same-day appointment | Yes | Yes | No | Yes |
+| Call a waiting patient | Yes | Yes | No | Yes |
+| Start/complete queue entry | Any clinic entry | No | Assigned appointments only | No |
+| View operational aggregate report | Yes | Yes | Own appointment/consultation scope | Clinic queue counts and own observation count |
+| View detailed administrator appointment report | Yes | No | No | No |
+
+Queue actions are POST-only and role-checked server-side. Queue transition
+events store the acting account and appointment identifier/statuses, not
+patient names or clinical text. Operational reports contain aggregate counts
+only. The existing Nurse patient-name restrictions also apply on the queue
+board.

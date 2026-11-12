@@ -9,7 +9,11 @@
             <p class="lead">{{ consultation.patient.full_name }} <span class="muted">({{ consultation.patient.patient_identifier }})</span></p>
         </div>
         {% if consultation.appointment %}
-            <span class="inline-status">{{ consultation.appointment.appointment_identifier }}</span>
+            {% if consultation.appointment.clinician_id == request.user.staff_profile.pk %}
+                <a class="inline-status" href="{% url 'clinic_appointments:appointment_detail' consultation.appointment_id %}?return_to={{ patient_history_url|urlencode }}">{{ consultation.appointment.appointment_identifier }}</a>
+            {% else %}
+                <span class="inline-status">{{ consultation.appointment.appointment_identifier }}</span>
+            {% endif %}
         {% endif %}
     </div>
 
@@ -23,7 +27,7 @@
     </dl>
 
     <div class="button-row">
-        <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' consultation.patient.patient_identifier %}">Back to medical history</a>
+        <a class="button button--secondary" href="{% if return_url %}{{ return_url }}{% else %}{% url 'clinic_clinical:patient_history' consultation.patient.patient_identifier %}{% endif %}">Back to medical history</a>
         {% if request.user.staff_profile.pk == consultation.clinician_id %}
             <a class="button" href="{% url 'clinic_clinical:consultation_edit' consultation.pk %}">Amend consultation</a>
         {% endif %}

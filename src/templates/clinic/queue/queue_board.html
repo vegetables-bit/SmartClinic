@@ -1,0 +1,52 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Clinic queue | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <p class="eyebrow">Care coordination</p>
+    <div class="page-header">
+        <div>
+            <h1>Clinic queue</h1>
+            <p class="lead">Today's appointments and checked-in patients.</p>
+        </div>
+        <span class="inline-status">{{ today|date:"M j, Y" }}</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Patient</th><th>Appointment</th><th>Clinician</th><th>Queue status</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for appointment in appointments %}
+                    <tr>
+                        <td>{% if request.user.staff_profile.role == "nurse" %}{{ appointment.patient.patient_identifier }}{% else %}{{ appointment.patient.full_name }}{% endif %}</td>
+                        <td>{{ appointment.appointment_at|date:"P" }}</td>
+                        <td>{{ appointment.clinician.account.get_full_name|default:appointment.clinician.account.username }}</td>
+                        <td>{% if appointment.queue_entry %}{{ appointment.queue_entry.get_status_display }}{% elif appointment.status == "completed" %}Completed{% else %}Not checked in{% endif %}</td>
+                        <td>
+                            <div class="button-row">
+                                {% if not appointment.queue_entry and can_check_in %}
+                                    {% if appointment.status == "scheduled" or appointment.status == "confirmed" %}<form method="post" action="{% url 'clinic_queue:check_in' appointment.pk %}">{% csrf_token %}<button type="submit">Check in</button></form>{% endif %}
+                                {% elif appointment.queue_entry %}
+                                    {% with entry=appointment.queue_entry %}
+                                        {% if entry.status == "waiting" and can_check_in %}
+                                            <form method="post" action="{% url 'clinic_queue:transition' entry.pk 'call' %}">{% csrf_token %}<button type="submit">Call</button></form>
+                                        {% endif %}
+                                        {% if entry.status == "waiting" or entry.status == "called" %}
+                                            {% if request.user.staff_profile.role == "administrator" or request.user.staff_profile.role == "clinician" and appointment.clinician_id == request.user.staff_profile.pk %}
+                                                <form method="post" action="{% url 'clinic_queue:transition' entry.pk 'start' %}">{% csrf_token %}<button type="submit">Start consultation</button></form>
+                                            {% endif %}
+                                        {% endif %}
+                                        {% if entry.status == "in_consultation" and request.user.staff_profile.role == "administrator" or entry.status == "in_consultation" and request.user.staff_profile.role == "clinician" and appointment.clinician_id == request.user.staff_profile.pk %}
+                                            <form method="post" action="{% url 'clinic_queue:transition' entry.pk 'complete' %}">{% csrf_token %}<button type="submit">Complete</button></form>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">No appointments are scheduled for today.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

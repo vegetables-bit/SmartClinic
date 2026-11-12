@@ -1,8 +1,10 @@
+import logging
 from urllib.parse import urlsplit
 
 from django.contrib import messages
-from django.contrib.auth import logout
+from django.contrib.auth import login as auth_login, logout, update_session_auth_hash
 from django.contrib.auth.views import (
+    INTERNAL_RESET_SESSION_TOKEN,
     LoginView,
     PasswordChangeView,
     PasswordResetCompleteView,
@@ -12,9 +14,9 @@ from django.contrib.auth.views import (
     LogoutView,
 )
 from django.core.paginator import Paginator
-from django.db import transaction
-from django.db import IntegrityError
-from django.db.models import Q
+from django.db import DatabaseError, IntegrityError, transaction
+from django.db.models import Count, Q
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import Resolver404, resolve, reverse_lazy
 from django.utils.decorators import method_decorator
@@ -31,15 +33,60 @@ from clinic.auth_forms import (
 )
 from clinic.authentication import active_staff_required, administrator_required
 from clinic.appointment_reminders import REMINDER_NOTIFICATION_TYPE
-from clinic.models import AppointmentNotification, StaffProfile
+from clinic.appointment_views import (
+    APPOINTMENT_READ_ROLES,
+    appointment_queryset_for,
+)
+from clinic.audit import record_audit_event
+from clinic.models import Appointment, AppointmentNotification, Patient, StaffProfile
 
 STAFF_PER_PAGE = 25
+logger = logging.getLogger(__name__)
 
 
 class StaffLoginView(LoginView):
     template_name = "clinic/auth/login.html"
     authentication_form = StaffAuthenticationForm
     redirect_authenticated_user = True
+
+    def form_valid(self, form):
+        user = form.get_user()
+        response = super().form_valid(form)
+        try:
+            record_audit_event(
+                actor=user,
+                action="auth.login.succeeded",
+                target=user,
+                metadata={},
+            )
+        except DatabaseError:
+            logout(self.request)
+            logger.error("Audit persistence failed for auth.login.succeeded.")
+            form.add_error(
+                None,
+                "Sign-in could not be completed. Please try again.",
+            )
+            response = self.render_to_response(self.get_context_data(form=form))
+            response.status_code = 503
+        return response
+
+    def form_invalid(self, form):
+        response = super().form_invalid(form)
+        invalid_credentials = any(
+            error.code == "invalid_login"
+            for error in form.errors.as_data().get("__all__", [])
+        )
+        if invalid_credentials:
+            try:
+                record_audit_event(
+                    actor=None,
+                    action="auth.login.failed",
+                    target=None,
+                    metadata={},
+                )
+            except DatabaseError:
+                logger.error("Audit persistence failed for auth.login.failed.")
+        return response
 
     def get_success_url(self):
         success_url = super().get_success_url()
@@ -70,6 +117,20 @@ class StaffLogoutView(LogoutView):
     next_page = reverse_lazy("clinic_auth:login")
     template_name = "clinic/auth/logout.html"
 
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        if user.is_authenticated and user.pk is not None:
+            try:
+                record_audit_event(
+                    actor=user,
+                    action="auth.logout",
+                    target=user,
+                    metadata={},
+                )
+            except DatabaseError:
+                logger.error("Audit persistence failed for auth.logout.")
+        return super().post(request, *args, **kwargs)
+
 
 @method_decorator(active_staff_required, name="dispatch")
 class StaffPasswordChangeView(PasswordChangeView):
@@ -77,9 +138,25 @@ class StaffPasswordChangeView(PasswordChangeView):
     success_url = reverse_lazy("clinic_auth:password_change_done")
 
     def form_valid(self, form):
-        response = super().form_valid(form)
+        try:
+            with transaction.atomic():
+                user = form.save()
+                record_audit_event(
+                    actor=user,
+                    action="auth.password.changed",
+                    target=user,
+                    metadata={},
+                )
+        except DatabaseError:
+            logger.error("Audit persistence failed for auth.password.changed.")
+            form.add_error(
+                None,
+                "Password change could not be completed. Please try again.",
+            )
+            return self.form_invalid(form)
+        update_session_auth_hash(self.request, user)
         messages.success(self.request, "Your password was changed.")
-        return response
+        return HttpResponseRedirect(self.get_success_url())
 
 
 class StaffPasswordResetView(PasswordResetView):
@@ -88,6 +165,21 @@ class StaffPasswordResetView(PasswordResetView):
     email_template_name = "clinic/auth/password_reset_email.txt"
     subject_template_name = "clinic/auth/password_reset_subject.txt"
     success_url = reverse_lazy("clinic_auth:password_reset_done")
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        try:
+            record_audit_event(
+                actor=None,
+                action="auth.password_reset.requested",
+                target=None,
+                metadata={},
+            )
+        except DatabaseError:
+            logger.error(
+                "Audit persistence failed for auth.password_reset.requested."
+            )
+        return response
 
 
 class StaffPasswordResetDoneView(PasswordResetDoneView):
@@ -98,6 +190,31 @@ class StaffPasswordResetConfirmView(PasswordResetConfirmView):
     template_name = "clinic/auth/password_reset_confirm.html"
     success_url = reverse_lazy("clinic_auth:password_reset_complete")
 
+    def form_valid(self, form):
+        try:
+            with transaction.atomic():
+                user = form.save()
+                record_audit_event(
+                    actor=None,
+                    action="auth.password_reset.completed",
+                    target=user,
+                    metadata={},
+                )
+        except DatabaseError:
+            logger.error(
+                "Audit persistence failed for auth.password_reset.completed."
+            )
+            form.add_error(
+                None,
+                "Password reset could not be completed. Please try again.",
+            )
+            return self.form_invalid(form)
+
+        del self.request.session[INTERNAL_RESET_SESSION_TOKEN]
+        if self.post_reset_login:
+            auth_login(self.request, user, self.post_reset_login_backend)
+        return HttpResponseRedirect(self.get_success_url())
+
 
 class StaffPasswordResetCompleteView(PasswordResetCompleteView):
     template_name = "clinic/auth/password_reset_complete.html"
@@ -106,32 +223,111 @@ class StaffPasswordResetCompleteView(PasswordResetCompleteView):
 @active_staff_required
 def staff_home(request):
     profile = request.user.staff_profile
-    upcoming_reminders = (
-        AppointmentNotification.objects.filter(
-            recipient=request.user,
-            notification_type=REMINDER_NOTIFICATION_TYPE,
-            read_at__isnull=True,
-            scheduled_for__lte=timezone.now(),
-            appointment__appointment_at__gt=timezone.now(),
-            appointment__status__in=("scheduled", "confirmed"),
-            appointment__clinician__account=request.user,
-            appointment__clinician__is_active=True,
-            appointment__clinician__account__is_active=True,
+    is_clinician = profile.role == StaffProfile.Role.CLINICIAN
+    is_nurse = profile.role == StaffProfile.Role.NURSE
+    can_view_appointments = (
+        profile.role in APPOINTMENT_READ_ROLES and not is_nurse
+    )
+    can_view_patient_totals = profile.role in (
+        StaffProfile.Role.ADMINISTRATOR,
+        StaffProfile.Role.RECEPTIONIST,
+    )
+    upcoming_reminders = AppointmentNotification.objects.none()
+    appointment_status_counts = []
+    nurse_upcoming_appointments = ()
+    today_appointment_count = None
+    upcoming_appointment_count = None
+    if is_nurse:
+        now = timezone.now()
+        nurse_upcoming_appointments = (
+            Appointment.objects.filter(
+                Q(appointment_at__date=timezone.localdate())
+                | Q(appointment_at__gt=now),
+                status__in=(
+                    Appointment.Status.SCHEDULED,
+                    Appointment.Status.CONFIRMED,
+                ),
+            )
+            .select_related("patient", "clinician__account")
+            .order_by("appointment_at", "pk")[:5]
         )
-        .select_related(
-            "appointment",
-            "appointment__patient",
-            "appointment__clinician",
-            "appointment__clinician__account",
+    if is_clinician:
+        now = timezone.now()
+        upcoming_reminders = (
+            AppointmentNotification.objects.filter(
+                recipient=request.user,
+                notification_type=REMINDER_NOTIFICATION_TYPE,
+                read_at__isnull=True,
+                scheduled_for__lte=now,
+                appointment__appointment_at__gt=now,
+                appointment__status__in=(
+                    Appointment.Status.SCHEDULED,
+                    Appointment.Status.CONFIRMED,
+                ),
+                appointment__clinician__account=request.user,
+                appointment__clinician__is_active=True,
+                appointment__clinician__account__is_active=True,
+            )
+            .select_related(
+                "appointment",
+                "appointment__patient",
+                "appointment__clinician",
+                "appointment__clinician__account",
+            )
+            .order_by("scheduled_for", "-created_at")[:5]
         )
-        .order_by("scheduled_for", "-created_at")[:5]
+    if can_view_appointments:
+        now = timezone.now()
+        appointments = appointment_queryset_for(request.user)
+        appointment_metrics = appointments.aggregate(
+            today=Count("pk", filter=Q(appointment_at__date=timezone.localdate())),
+            upcoming=Count(
+                "pk",
+                filter=Q(
+                    appointment_at__gt=now,
+                    status__in=(
+                        Appointment.Status.SCHEDULED,
+                        Appointment.Status.CONFIRMED,
+                    ),
+                ),
+            ),
+        )
+        today_appointment_count = appointment_metrics["today"]
+        upcoming_appointment_count = appointment_metrics["upcoming"]
+        grouped_status_counts = {
+            row["status"]: row["total"]
+            for row in appointments.order_by()
+            .values("status")
+            .annotate(total=Count("pk"))
+        }
+        appointment_status_counts = [
+            {
+                "value": status,
+                "label": label,
+                "total": grouped_status_counts.get(status, 0),
+            }
+            for status, label in Appointment.Status.choices
+        ]
+    registered_patient_count = (
+        Patient.objects.count() if can_view_patient_totals else None
     )
     return render(
         request,
-        "clinic/auth/staff_home.html",
+        (
+            "clinic/auth/nurse_dashboard.html"
+            if is_nurse
+            else "clinic/auth/staff_home.html"
+        ),
         {
             "dashboard_title": f"{profile.get_role_display()} dashboard",
             "upcoming_reminders": upcoming_reminders,
+            "can_view_appointments": can_view_appointments,
+            "can_view_patient_totals": can_view_patient_totals,
+            "today_appointment_count": today_appointment_count,
+            "upcoming_appointment_count": upcoming_appointment_count,
+            "appointment_status_counts": appointment_status_counts,
+            "registered_patient_count": registered_patient_count,
+            "nurse_upcoming_appointments": nurse_upcoming_appointments,
         },
     )
 
@@ -231,10 +427,20 @@ def staff_account_profile(request, profile_id):
 def staff_account_create(request):
     form = StaffAccountCreateForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
+        audit_write_started = False
         try:
             with transaction.atomic():
                 profile = form.save()
+                audit_write_started = True
+                record_audit_event(
+                    actor=request.user,
+                    action="staff.account.created",
+                    target=profile,
+                    metadata={"account_id": profile.account_id},
+                )
         except IntegrityError:
+            if audit_write_started:
+                raise
             form.add_error(
                 None,
                 "The account could not be saved because a unique value was "
@@ -270,10 +476,74 @@ def staff_account_edit(request, profile_id):
         profile=profile,
     )
     if request.method == "POST" and form.is_valid():
+        audit_write_started = False
+        original_values = {
+            "username": profile.account.username,
+            "first_name": profile.account.first_name,
+            "last_name": profile.account.last_name,
+            "email": profile.account.email,
+            "staff_identifier": profile.staff_identifier or "",
+            "phone_number": profile.phone_number,
+            "role": profile.role,
+        }
+        original_department_ids = set(
+            profile.departments.values_list("pk", flat=True)
+        )
+        changed_account_fields = [
+            field
+            for field in (
+                "username",
+                "first_name",
+                "last_name",
+                "email",
+                "staff_identifier",
+                "phone_number",
+            )
+            if form.cleaned_data[field] != original_values[field]
+        ]
+        role_changed = form.cleaned_data["role"] != original_values["role"]
+        departments_changed = set(
+            form.cleaned_data["departments"].values_list("pk", flat=True)
+        ) != original_department_ids
         try:
             with transaction.atomic():
                 form.save()
+                if changed_account_fields:
+                    audit_write_started = True
+                    record_audit_event(
+                        actor=request.user,
+                        action="staff.account.updated",
+                        target=profile,
+                        metadata={
+                            "account_id": profile.account_id,
+                            "changed_fields": changed_account_fields,
+                        },
+                    )
+                if role_changed:
+                    audit_write_started = True
+                    record_audit_event(
+                        actor=request.user,
+                        action="staff.role.changed",
+                        target=profile,
+                        metadata={
+                            "account_id": profile.account_id,
+                            "changed_fields": ["role"],
+                        },
+                    )
+                if departments_changed:
+                    audit_write_started = True
+                    record_audit_event(
+                        actor=request.user,
+                        action="staff.departments.changed",
+                        target=profile,
+                        metadata={
+                            "account_id": profile.account_id,
+                            "changed_fields": ["departments"],
+                        },
+                    )
         except IntegrityError:
+            if audit_write_started:
+                raise
             form.add_error(
                 None,
                 "The account could not be updated because a unique value was "
@@ -329,6 +599,16 @@ def staff_account_status(request, profile_id):
         profile.save(update_fields=("is_active", "updated_at"))
         profile.account.is_active = activating
         profile.account.save(update_fields=("is_active",))
+        record_audit_event(
+            actor=request.user,
+            action=(
+                "staff.account.activated"
+                if activating
+                else "staff.account.deactivated"
+            ),
+            target=profile,
+            metadata={"account_id": profile.account_id},
+        )
 
     messages.success(
         request,

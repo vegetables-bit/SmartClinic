@@ -2,8 +2,9 @@ from django.contrib import messages
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -11,10 +12,21 @@ from clinic.appointment_reminders import (
     REMINDER_NOTIFICATION_TYPE,
     sync_appointment_reminder as _sync_appointment_reminder,
 )
-from clinic.appointment_forms import AppointmentForm, AppointmentSearchForm
+from clinic.appointment_forms import (
+    AppointmentForm,
+    AppointmentReportForm,
+    AppointmentSearchForm,
+)
 from clinic.authentication import roles_required
+from clinic.audit import record_audit_event
 from clinic.clinical_access import clinician_has_patient_care_scope
-from clinic.models import Appointment, AppointmentNotification, AuditEvent, StaffProfile
+from clinic.models import (
+    Appointment,
+    AppointmentNotification,
+    NursingObservation,
+    StaffProfile,
+)
+from clinic.navigation import safe_return_url
 
 APPOINTMENT_MANAGER_ROLES = (
     StaffProfile.Role.ADMINISTRATOR,
@@ -23,6 +35,7 @@ APPOINTMENT_MANAGER_ROLES = (
 APPOINTMENT_READ_ROLES = (
     *APPOINTMENT_MANAGER_ROLES,
     StaffProfile.Role.CLINICIAN,
+    StaffProfile.Role.NURSE,
 )
 APPOINTMENTS_PER_PAGE = 25
 EDITABLE_STATUSES = (
@@ -31,7 +44,7 @@ EDITABLE_STATUSES = (
 )
 
 
-def _appointment_queryset_for(user):
+def appointment_queryset_for(user):
     appointments = Appointment.objects.select_related(
         "patient",
         "clinician__account",
@@ -46,10 +59,10 @@ def _appointment_identifier(appointment):
 
 
 def _record_appointment_event(appointment, actor, action, metadata):
-    AuditEvent.objects.create(
+    record_audit_event(
         actor=actor,
         action=action,
-        content_object=appointment,
+        target=appointment,
         metadata=metadata,
     )
 
@@ -75,7 +88,7 @@ def appointment_list(request):
             status=400,
         )
 
-    appointments = _appointment_queryset_for(request.user)
+    appointments = appointment_queryset_for(request.user)
     cleaned = search_form.cleaned_data
     query = cleaned["query"]
     if query:
@@ -90,6 +103,14 @@ def appointment_list(request):
     if cleaned["appointment_date"]:
         appointments = appointments.filter(
             appointment_at__date=cleaned["appointment_date"]
+        )
+    if cleaned["start_date"]:
+        appointments = appointments.filter(
+            appointment_at__date__gte=cleaned["start_date"]
+        )
+    if cleaned["end_date"]:
+        appointments = appointments.filter(
+            appointment_at__date__lte=cleaned["end_date"]
         )
     if cleaned["category"] == "upcoming":
         appointments = appointments.filter(
@@ -123,6 +144,57 @@ def appointment_list(request):
             "can_manage_appointments": request.user.staff_profile.role
             in APPOINTMENT_MANAGER_ROLES,
             "appointment_duration_minutes": settings.APPOINTMENT_DEFAULT_DURATION_MINUTES,
+        },
+    )
+
+
+@roles_required(StaffProfile.Role.ADMINISTRATOR)
+def appointment_report(request):
+    report_form = AppointmentReportForm(request.GET)
+    if not report_form.is_valid():
+        return render(
+            request,
+            "clinic/appointments/appointment_report.html",
+            {
+                "report_form": report_form,
+                "status_counts": (),
+                "total_appointments": 0,
+                "has_results": False,
+            },
+            status=400,
+        )
+
+    appointments = appointment_queryset_for(request.user)
+    start_date = report_form.cleaned_data["start_date"]
+    end_date = report_form.cleaned_data["end_date"]
+    if start_date:
+        appointments = appointments.filter(appointment_at__date__gte=start_date)
+    if end_date:
+        appointments = appointments.filter(appointment_at__date__lte=end_date)
+
+    grouped_counts = {
+        row["status"]: row["total"]
+        for row in appointments.order_by()
+        .values("status")
+        .annotate(total=Count("pk"))
+    }
+    status_counts = [
+        {
+            "value": status,
+            "label": label,
+            "total": grouped_counts.get(status, 0),
+        }
+        for status, label in Appointment.Status.choices
+    ]
+    total_appointments = sum(row["total"] for row in status_counts)
+    return render(
+        request,
+        "clinic/appointments/appointment_report.html",
+        {
+            "report_form": report_form,
+            "status_counts": status_counts,
+            "total_appointments": total_appointments,
+            "has_results": total_appointments > 0,
         },
     )
 
@@ -167,7 +239,7 @@ def appointment_create(request):
 @roles_required(*APPOINTMENT_READ_ROLES)
 def appointment_detail(request, appointment_id):
     appointment = get_object_or_404(
-        _appointment_queryset_for(request.user),
+        appointment_queryset_for(request.user),
         pk=appointment_id,
     )
     can_manage = request.user.staff_profile.role in APPOINTMENT_MANAGER_ROLES
@@ -178,6 +250,25 @@ def appointment_detail(request, appointment_id):
             appointment.patient,
         )
     )
+    allowed_return_paths = {
+        reverse("clinic_appointments:appointment_list"),
+        reverse("clinic_patients:patient_list"),
+    }
+    if request.user.staff_profile.role == StaffProfile.Role.CLINICIAN:
+        allowed_return_paths.update(
+            {
+                reverse("clinic_clinical:patient_index"),
+                reverse(
+                    "clinic_clinical:patient_history",
+                    args=[appointment.patient.patient_identifier],
+                ),
+            }
+        )
+    return_url = safe_return_url(
+        request,
+        "return_to",
+        allowed_return_paths,
+    )
     return render(
         request,
         "clinic/appointments/appointment_detail.html",
@@ -185,7 +276,21 @@ def appointment_detail(request, appointment_id):
             "appointment": appointment,
             "appointment_identifier": _appointment_identifier(appointment),
             "can_manage_appointments": can_manage,
+            "can_view_appointment_reason": (
+                request.user.staff_profile.role != StaffProfile.Role.NURSE
+            ),
+            "nursing_observations": (
+                NursingObservation.objects.filter(appointment=appointment)
+                .select_related("recorded_by__account")
+                .order_by("-observed_at", "-pk")
+                if request.user.staff_profile.role == StaffProfile.Role.NURSE
+                else ()
+            ),
+            "can_record_nursing_observation": (
+                request.user.staff_profile.role == StaffProfile.Role.NURSE
+            ),
             "can_view_patient_history": can_view_patient_history,
+            "return_url": return_url,
             "can_edit_appointment": can_manage
             and appointment.status in EDITABLE_STATUSES,
             "can_cancel_appointment": can_manage

@@ -23,6 +23,10 @@ class AppointmentNotification(TimeStampedModel):
     )
     scheduled_for = models.DateTimeField(blank=True, null=True)
     read_at = models.DateTimeField(blank=True, null=True)
+    email_sent_at = models.DateTimeField(blank=True, null=True)
+    email_last_attempt_at = models.DateTimeField(blank=True, null=True)
+    email_attempt_count = models.PositiveSmallIntegerField(default=0)
+    email_last_error_code = models.CharField(max_length=32, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

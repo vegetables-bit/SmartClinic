@@ -8,9 +8,12 @@ this module enforces the current patient-management boundary:
 
 - Administrators and receptionists can list/search, view, register, and edit
   patient demographics.
+- Nurses can list/search and view active patient demographics in read-only
+  mode. Archived records remain hidden from Nurses, and contact details are
+  not shown.
 - Only administrators can archive and restore records.
-- Clinicians and nurses are denied M05 patient routes unless a separate
-  care-assignment scope is approved and implemented.
+- Clinicians are denied M05 patient routes unless a separate care-assignment
+  scope is approved and implemented.
 - No clinical notes, consultation details, appointment data, or medical-history
   entries are displayed by M05.
 
@@ -48,8 +51,9 @@ and is never interpolated into SQL.
 
 Active patients are shown by default. A validated status selection supports
 archived-only and all records. Results are paginated at 25 rows per page. The
-list exposes demographics appropriate to the interim receptionist/admin
-boundary and does not include clinical notes or emergency contact details.
+list exposes demographics appropriate to each role and does not include
+clinical notes. Nurse search is limited to patient identifier and name and
+does not expose phone, address, or emergency-contact details.
 
 ## Routes and behavior
 

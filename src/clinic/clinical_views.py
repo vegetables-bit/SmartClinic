@@ -1,18 +1,28 @@
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from clinic.authentication import roles_required
+from clinic.audit import record_audit_event
 from clinic.clinical_access import patients_in_clinician_care
-from clinic.clinical_forms import ConsultationForm, MedicalHistoryEntryForm
+from clinic.clinical_forms import (
+    ClinicalPatientSearchForm,
+    ConsultationForm,
+    MedicalHistoryEntryForm,
+)
 from clinic.models import (
-    AuditEvent,
     Consultation,
     ConsultationRevision,
     MedicalHistoryEntry,
     StaffProfile,
 )
+from clinic.navigation import safe_return_url
+
+CLINICAL_PATIENTS_PER_PAGE = 25
 
 
 def _get_patient_in_clinician_care(request, patient_identifier):
@@ -28,30 +38,67 @@ def _record_clinical_event(actor, action, instance, patient, **metadata):
         "record_id": instance.pk,
         **metadata,
     }
-    AuditEvent.objects.create(
+    record_audit_event(
         actor=actor,
         action=action,
-        content_object=instance,
+        target=instance,
         metadata=event_metadata,
     )
 
 
 @roles_required(StaffProfile.Role.CLINICIAN)
 def patient_index(request):
-    patients = patients_in_clinician_care(request.user.staff_profile).order_by(
-        "full_name",
-        "patient_identifier",
+    search_form = ClinicalPatientSearchForm(request.GET)
+    if not search_form.is_valid():
+        return render(
+            request,
+            "clinic/clinical/patient_index.html",
+            {
+                "search_form": search_form,
+                "patients": Paginator(
+                    patients_in_clinician_care(request.user.staff_profile).none(),
+                    CLINICAL_PATIENTS_PER_PAGE,
+                ).page(1),
+                "query_string": "",
+                "return_url": "",
+            },
+            status=400,
+        )
+
+    patients = patients_in_clinician_care(request.user.staff_profile)
+    query = search_form.cleaned_data["query"]
+    if query:
+        patients = patients.filter(
+            Q(full_name__icontains=query)
+            | Q(patient_identifier__icontains=query)
+        )
+    patients = patients.order_by("full_name", "patient_identifier")
+
+    query_params = request.GET.copy()
+    query_params.pop("page", None)
+    page = Paginator(patients, CLINICAL_PATIENTS_PER_PAGE).get_page(
+        request.GET.get("page")
     )
     return render(
         request,
         "clinic/clinical/patient_index.html",
-        {"patients": patients},
+        {
+            "search_form": search_form,
+            "patients": page,
+            "query_string": query_params.urlencode(),
+            "return_url": request.get_full_path(),
+        },
     )
 
 
 @roles_required(StaffProfile.Role.CLINICIAN)
 def patient_history(request, patient_identifier):
     patient = _get_patient_in_clinician_care(request, patient_identifier)
+    return_url = safe_return_url(
+        request,
+        "return_to",
+        {reverse("clinic_clinical:patient_index")},
+    )
     consultations = (
         Consultation.objects.filter(patient=patient)
         .select_related("clinician__account", "appointment")
@@ -69,6 +116,7 @@ def patient_history(request, patient_identifier):
             "patient": patient,
             "consultations": consultations,
             "history_entries": history_entries,
+            "return_url": return_url,
         },
     )
 
@@ -132,10 +180,28 @@ def consultation_detail(request, consultation_id):
         pk=consultation_id,
         patient__in=patients_in_clinician_care(request.user.staff_profile),
     )
+    return_url = safe_return_url(
+        request,
+        "return_to",
+        {
+            reverse(
+                "clinic_clinical:patient_history",
+                args=[consultation.patient.patient_identifier],
+            )
+        },
+    )
+    patient_history_url = reverse(
+        "clinic_clinical:patient_history",
+        args=[consultation.patient.patient_identifier],
+    )
     return render(
         request,
         "clinic/clinical/consultation_detail.html",
-        {"consultation": consultation},
+        {
+            "consultation": consultation,
+            "patient_history_url": patient_history_url,
+            "return_url": return_url,
+        },
     )
 
 

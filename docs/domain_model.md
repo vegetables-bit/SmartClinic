@@ -78,10 +78,12 @@ choice and may be revised if a detailed workflow requirement is approved.
   uniqueness is enforced by the database, and the patient creation workflow
   retries safely after a collision.
 - Appointment statuses are `scheduled`, `confirmed`, `attended`, `completed`,
-  `cancelled`, and `missed`. The model validates these values; transition
-  enforcement for M07 permits cancellation only from scheduled or confirmed.
-  Attendance, completion, and missed-state transitions remain for later
-  workflows.
+  `cancelled`, and `missed`. Same-day attendance and completion are driven by
+  the separate `QueueEntry` workflow; automatic missed-state detection is not
+  implemented. See `clinic_queue_management.md`.
+- A QueueEntry belongs one-to-one to an Appointment and records same-day
+  waiting/called/in-consultation/completed stages with timestamps. It does not
+  replace Appointment status or Consultation clinical notes.
 - The M07 appointment display identifier is derived as `AP-` followed by the
   zero-padded database primary key; it adds no model field or migration.
 - M07 derives appointment end time from

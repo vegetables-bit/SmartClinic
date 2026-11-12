@@ -6,6 +6,7 @@ app_name = "clinic_appointments"
 
 urlpatterns = [
     path("", appointment_views.appointment_list, name="appointment_list"),
+    path("reports/", appointment_views.appointment_report, name="appointment_report"),
     path("reminders/", appointment_views.appointment_reminders, name="appointment_reminders"),
     path(
         "reminders/<int:notification_id>/read/",

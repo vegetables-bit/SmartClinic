@@ -1,0 +1,35 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Record nursing observation | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Nursing record</p>
+            <h1>Record observation</h1>
+            <p class="lead">
+                {{ appointment.patient.patient_identifier }} ·
+                {{ appointment.appointment_at|date:"M j, Y, P" }}
+            </p>
+        </div>
+    </div>
+    <p class="notice">Enter one or more measurements. Blood pressure requires both values. No automated clinical assessment is performed.</p>
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="form-errors" aria-live="polite">{{ form.non_field_errors }}</div>
+        {% endif %}
+        {% for field in form %}
+            <div class="form-field{% if field.name == 'notes' %} form-field--wide{% endif %}">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="muted">{{ field.help_text }}</p>{% endif %}
+                {% for error in field.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+            </div>
+        {% endfor %}
+        <div class="button-row form-actions">
+            <button type="submit">Save observation</button>
+            <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_detail' appointment.pk %}">Cancel</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

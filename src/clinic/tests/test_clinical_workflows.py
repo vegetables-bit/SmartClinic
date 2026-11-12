@@ -473,6 +473,86 @@ class ClinicalWorkflowTests(TestCase):
             200,
         )
 
+    def test_clinical_index_search_is_trimmed_case_insensitive_and_scope_limited(self):
+        self.login_as(self.clinician)
+        cases = (
+            (self.patient.patient_identifier[-8:].lower(), True),
+            ("  fictional clinical patient  ", True),
+            (self.other_patient.patient_identifier, False),
+        )
+
+        for query, expected in cases:
+            with self.subTest(query=query):
+                response = self.client.get(
+                    self.clinical_index_url(),
+                    {"query": query},
+                )
+                self.assertEqual(response.status_code, 200)
+                if expected:
+                    self.assertContains(
+                        response,
+                        f"<h3>{self.patient.full_name}</h3>",
+                    )
+                else:
+                    self.assertNotContains(
+                        response,
+                        f"<h3>{self.other_patient.full_name}</h3>",
+                    )
+
+    def test_clinical_index_blank_no_match_and_invalid_search(self):
+        self.login_as(self.clinician)
+
+        blank_response = self.client.get(self.clinical_index_url(), {"query": "  "})
+        self.assertContains(blank_response, f"<h3>{self.patient.full_name}</h3>")
+
+        no_match_response = self.client.get(
+            self.clinical_index_url(),
+            {"query": "no matching patient"},
+        )
+        self.assertEqual(no_match_response.status_code, 200)
+        self.assertContains(no_match_response, "No clinical patients match this search.")
+
+        for query in ("x" * 101, "bad\x00search"):
+            with self.subTest(query=query):
+                response = self.client.get(
+                    self.clinical_index_url(),
+                    {"query": query},
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertTrue(response.context["search_form"].errors)
+
+    def test_clinical_index_paginates_and_preserves_search(self):
+        for index in range(26):
+            patient = Patient.objects.create(
+                full_name=f"Fictional Page Patient {index:02}",
+            )
+            self.create_consultation(
+                patient=patient,
+                appointment=None,
+                consultation_at=timezone.now() + timedelta(seconds=index),
+            )
+        self.login_as(self.clinician)
+        url = self.clinical_index_url()
+
+        first_page = self.client.get(url, {"query": "Fictional Page Patient"})
+        second_page = self.client.get(
+            url,
+            {"query": "Fictional Page Patient", "page": "2"},
+        )
+
+        self.assertEqual(first_page.context["patients"].paginator.count, 26)
+        self.assertEqual(len(first_page.context["patients"]), 25)
+        self.assertEqual(len(second_page.context["patients"]), 1)
+        self.assertEqual(
+            first_page.context["query_string"],
+            "query=Fictional+Page+Patient",
+        )
+        self.assertContains(
+            first_page,
+            "?query=Fictional+Page+Patient&amp;page=2",
+            html=False,
+        )
+
     def test_cancelled_appointment_only_does_not_show_history_link(self):
         self.appointment.status = Appointment.Status.CANCELLED
         self.appointment.save(update_fields=("status", "updated_at"))
@@ -529,6 +609,26 @@ class ClinicalWorkflowTests(TestCase):
 
         self.assertContains(response, self.history_url())
         self.assertEqual(self.client.get(self.history_url()).status_code, 200)
+
+    def test_clinical_history_links_only_to_accessible_related_appointment(self):
+        consultation = self.create_consultation()
+        self.login_as(self.clinician)
+
+        history_response = self.client.get(self.history_url())
+        appointment_url = reverse(
+            "clinic_appointments:appointment_detail",
+            args=[self.appointment.pk],
+        )
+        self.assertContains(history_response, f'href="{appointment_url}?return_to=')
+
+        detail_response = self.client.get(
+            reverse(
+                "clinic_clinical:consultation_detail",
+                args=[consultation.pk],
+            )
+        )
+        self.assertContains(detail_response, f'href="{appointment_url}?return_to=')
+        self.assertEqual(self.client.get(appointment_url).status_code, 200)
 
     def test_unauthenticated_and_missing_records_are_handled_safely(self):
         self.assertEqual(self.client.get(self.history_url()).status_code, 302)

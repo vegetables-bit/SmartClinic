@@ -5,7 +5,11 @@ project currently provides staff authentication and management, a shared
 responsive interface, demographic patient registration and management, and
 appointment scheduling and management, with scheduled in-app appointment
 reminder generation and reconciliation, and clinician-scoped consultation and
-medical-history workflows. Reporting and richer dashboards are not implemented.
+medical-history workflows. The shared staff dashboard includes role-scoped
+appointment summaries; an administrator-only appointment status report is
+available with inclusive local-date filters. Queue workflows, role-specific
+aggregated operational reports, staff reminder email delivery, and an isolated
+synthetic backup/recovery demonstration are also included.
 
 ## Prerequisites
 
@@ -62,10 +66,13 @@ Set a random development secret for the current PowerShell session. It is
 generated at runtime and is not stored in source control:
 
 ```powershell
+$env:DJANGO_ENV = 'development'
 $env:DJANGO_SECRET_KEY = (& python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())")
 ```
 
-Set this variable again in each new terminal before running Django commands.
+Set these variables again in each new terminal before running Django commands.
+For production configuration requirements, see
+[`docs/security_configuration.md`](docs/security_configuration.md).
 Do not use a development secret in a production deployment.
 
 ## Run the project
@@ -93,8 +100,21 @@ interface shell, M05 demographic patient management, M06 healthcare staff
 management, M07 appointment management, M08 scheduled in-app appointment
 reminders, and M09 clinician-scoped consultation and medical history. Reminder
 generation requires an external scheduler; see `docs/appointment_reminders.md`.
+Nurses have a dedicated dashboard, read-only access to active demographic
+records and appointment details, queue check-in/call actions, and an
+appointment-linked observation workflow. They cannot edit patient
+demographics, appointment schedules, or clinician consultations.
 See `docs/authentication_and_authorization.md`, `docs/patient_management.md`,
-and the milestone reports in `reports/` for behavior and verification evidence.
+`docs/database_backup.md`, and the milestone reports in `reports/` for behavior
+and verification evidence. Explicit SQLite backup and isolated restore commands
+are available; backup policy and production recovery objectives remain subject
+to approval.
+
+See `docs/clinic_queue_management.md`, `docs/role_specific_reports.md`,
+`docs/appointment_reminder_email.md`, and
+`docs/backup_recovery_demonstration.md` for the added workflows and their
+operational boundaries. Apply the queue and reminder-delivery migration before
+using queue pages or sending email reminders.
 
 ## Planned milestones
 
@@ -111,12 +131,16 @@ and the milestone reports in `reports/` for behavior and verification evidence.
 8. **Milestone 07 — Appointment management** (implemented; see
    `reports/MILESTONE_07_REPORT.md`)
 9. **Milestone 08 — Appointment reminders** (implemented with periodic
-   external scheduler invocation; attendance/completion/missed transitions
-   remain deferred)
+   external scheduler invocation; staff email delivery is a separate explicit
+   operation)
 10. **Milestone 09 — Consultation and medical history** (implemented with
-    clinician-scoped access; nursing workflow remains outside scope)
-11. **Milestone 10 onward — Reporting and integration workflows** (not started)
+    clinician-scoped access; nursing observations are implemented)
+11. **Milestone 11 — Dashboard and appointment reporting** (initial operational
+    scope implemented; patient-registration and clinical reporting remain
+    deferred pending requirements approval)
 
-M01 remains approved and authoritative. The M08 reminder command is not
-automatically run by Django; deployment must configure a scheduler. Later
-reporting and integration workflows have not been started.
+M01 remains the approved requirements baseline. Reminder reconciliation is not
+automatically run by Django; deployments configure its scheduler separately.
+Email reminders require a separately configured email backend and an explicit
+delivery command. The synthetic recovery demonstration does not access clinic
+records.

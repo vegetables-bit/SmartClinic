@@ -11,37 +11,41 @@
         <span class="inline-status">{{ request.user.staff_profile.get_role_display }}</span>
     </div>
 
-    <div class="stats-grid dashboard-stats">
-        <div class="stat-card">
-            <div class="stat-card__topline">
-                <span class="stat-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3"></circle><path d="M5 20v-1a7 7 0 0 1 14 0v1"></path></svg>
-                </span>
-                <div class="stat-card__label">Role</div>
-            </div>
-            <div class="stat-card__value">{{ request.user.staff_profile.get_role_display }}</div>
+    {% if can_view_appointments or can_view_patient_totals %}
+        <div class="stats-grid dashboard-stats">
+            {% if can_view_appointments %}
+                <div class="stat-card">
+                    <div class="stat-card__label">Appointments today <span class="muted">(all statuses)</span></div>
+                    <div class="stat-card__value">{{ today_appointment_count }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card__label">Upcoming scheduled or confirmed <span class="muted">(from now)</span></div>
+                    <div class="stat-card__value">{{ upcoming_appointment_count }}</div>
+                </div>
+            {% endif %}
+            {% if can_view_patient_totals %}
+                <div class="stat-card">
+                    <div class="stat-card__label">Registered patients <span class="muted">(including archived)</span></div>
+                    <div class="stat-card__value">{{ registered_patient_count }}</div>
+                </div>
+            {% endif %}
         </div>
-        <div class="stat-card">
-            <div class="stat-card__topline">
-                <span class="stat-card__icon stat-card__icon--pink" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" focusable="false"><path d="m5 12 4 4L19 6"></path><circle cx="12" cy="12" r="9"></circle></svg>
-                </span>
-                <div class="stat-card__label">Status</div>
+        {% if can_view_appointments %}
+            <div class="dashboard-status-summary">
+                <h2>Appointments by status <span class="muted">(all dates)</span></h2>
+                <dl class="dashboard-status-list">
+                    {% for status in appointment_status_counts %}
+                        <div><dt>{{ status.label }}</dt><dd>{{ status.total }}</dd></div>
+                    {% endfor %}
+                </dl>
             </div>
-            <div class="stat-card__value">Active</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-card__topline">
-                <span class="stat-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
-                </span>
-                <div class="stat-card__label">Access</div>
-            </div>
-            <div class="stat-card__value">Protected</div>
-        </div>
-    </div>
+        {% endif %}
+    {% else %}
+        <p class="muted">Operational appointment and patient summaries are not available for your role.</p>
+    {% endif %}
 </section>
 
+{% if request.user.staff_profile.role == "clinician" %}
 <section class="panel panel--compact">
     <div class="section-heading section-heading--inline">
         <div>
@@ -64,6 +68,7 @@
         <p class="muted">No unread appointment reminders are currently scheduled.</p>
     {% endif %}
 </section>
+{% endif %}
 
 <section class="panel panel--compact">
     <div class="section-heading section-heading--inline">
@@ -74,12 +79,18 @@
         <p>Shortcuts for your current role.</p>
     </div>
     <div class="button-row">
-        <a class="button" href="{% url 'clinic_auth:password_change' %}">Change password</a>
         {% if request.user.staff_profile.role == "administrator" %}
             <a class="button button--secondary" href="{% url 'clinic_auth:staff_account_list' %}">Open staff directory</a>
+            <a class="button" href="{% url 'clinic_appointments:appointment_report' %}">Appointment report</a>
         {% endif %}
         {% if request.user.staff_profile.role == "clinician" %}
             <a class="button button--secondary" href="{% url 'clinic_clinical:patient_index' %}">Open Clinical Records</a>
+        {% endif %}
+        <a class="button button--secondary" href="{% url 'clinic_queue:board' %}">Open clinic queue</a>
+        <a class="button" href="{% url 'clinic_reports:operations' %}">View operational report</a>
+        {% if request.user.staff_profile.role == "receptionist" %}
+            <a class="button button--secondary" href="{% url 'clinic_patients:patient_create' %}">Register patient</a>
+            <a class="button" href="{% url 'clinic_appointments:appointment_create' %}">Schedule appointment</a>
         {% endif %}
     </div>
 </section>

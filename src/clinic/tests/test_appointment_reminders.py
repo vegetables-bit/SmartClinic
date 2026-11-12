@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from clinic.models import (
+    AuditEvent,
     Appointment,
     AppointmentNotification,
     Department,
@@ -73,6 +74,31 @@ class AppointmentReminderCommandTests(TestCase):
             delta=2,
         )
         self.assertIn("1 created", output)
+        event = AuditEvent.objects.get(action="reminder.created")
+        self.assertIsNone(event.actor)
+        self.assertEqual(event.content_object, reminder)
+        self.assertEqual(
+            event.metadata,
+            {
+                "actor_kind": "system",
+                "task": "reconcile_appointment_reminders",
+            },
+        )
+        summary = AuditEvent.objects.get(
+            action="reminder.reconciliation.completed"
+        )
+        self.assertIsNone(summary.actor)
+        self.assertIsNone(summary.content_object)
+        self.assertEqual(
+            summary.metadata,
+            {
+                "actor_kind": "system",
+                "task": "reconcile_appointment_reminders",
+                "created": 1,
+                "updated": 0,
+                "removed": 0,
+            },
+        )
 
     def test_command_skips_appointments_not_yet_within_lead_time(self):
         appointment = self.create_appointment(starts_in_hours=30)
@@ -105,6 +131,27 @@ class AppointmentReminderCommandTests(TestCase):
             1,
         )
         self.assertEqual(reminder.read_at, read_at)
+        self.assertEqual(
+            AuditEvent.objects.filter(action="reminder.created").count(),
+            1,
+        )
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="reminder.reconciliation.completed"
+            ).count(),
+            1,
+        )
+
+    def test_no_change_reconciliation_emits_no_events(self):
+        appointment = self.create_appointment(starts_in_hours=30)
+
+        self.run_command()
+        self.run_command()
+
+        self.assertFalse(AuditEvent.objects.exists())
+        self.assertFalse(
+            AppointmentNotification.objects.filter(appointment=appointment).exists()
+        )
 
     def test_cancelled_appointment_removes_reminder_and_is_not_recreated(self):
         appointment = self.create_appointment(status=Appointment.Status.CANCELLED)
@@ -118,6 +165,22 @@ class AppointmentReminderCommandTests(TestCase):
         self.run_command()
 
         self.assertFalse(AppointmentNotification.objects.filter(pk=reminder.pk).exists())
+        event = AuditEvent.objects.get(action="reminder.removed")
+        self.assertIsNone(event.actor)
+        self.assertEqual(event.content_object, appointment)
+        self.assertEqual(
+            event.metadata,
+            {
+                "actor_kind": "system",
+                "task": "reconcile_appointment_reminders",
+                "notification_id": reminder.pk,
+                "reason": "appointment_ineligible",
+            },
+        )
+        summary = AuditEvent.objects.get(
+            action="reminder.reconciliation.completed"
+        )
+        self.assertEqual(summary.metadata["removed"], 1)
 
     def test_rescheduling_recalculates_due_time_and_resets_read_state(self):
         appointment = self.create_appointment()
@@ -138,6 +201,22 @@ class AppointmentReminderCommandTests(TestCase):
         )
         self.assertIsNone(reminder.read_at)
         self.assertIn("1 updated", output)
+        update_event = AuditEvent.objects.get(action="reminder.updated")
+        self.assertIsNone(update_event.actor)
+        self.assertEqual(update_event.content_object, reminder)
+        self.assertEqual(
+            update_event.metadata,
+            {
+                "actor_kind": "system",
+                "task": "reconcile_appointment_reminders",
+            },
+        )
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="reminder.reconciliation.completed"
+            ).count(),
+            2,
+        )
 
     def test_past_appointment_reminder_is_removed(self):
         appointment = self.create_appointment(starts_in_hours=-1)
@@ -193,6 +272,21 @@ class AppointmentReminderCommandTests(TestCase):
                     notification_type="appointment_reminder",
                     scheduled_for=timezone.now(),
                 )
+
+    def test_audit_failure_rolls_back_reminder_creation_and_aborts_command(self):
+        appointment = self.create_appointment()
+
+        with patch(
+            "clinic.appointment_reminders.record_audit_event",
+            side_effect=RuntimeError("storage failure"),
+        ):
+            with self.assertRaisesMessage(RuntimeError, "storage failure"):
+                self.run_command()
+
+        self.assertFalse(
+            AppointmentNotification.objects.filter(appointment=appointment).exists()
+        )
+        self.assertFalse(AuditEvent.objects.exists())
 
     def test_due_time_visibility_and_dashboard_unread_filter(self):
         now = timezone.now()

@@ -10,6 +10,20 @@
         </div>
     </div>
 
+    <form method="get" class="patient-search clinical-search" role="search">
+        <div>
+            <label for="{{ search_form.query.id_for_label }}">{{ search_form.query.label }}</label>
+            {{ search_form.query }}
+            {% for error in search_form.query.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        </div>
+        {% if search_form.non_field_errors %}<div class="form-errors" aria-live="polite">{{ search_form.non_field_errors }}</div>{% endif %}
+        {% if search_form.errors %}<p class="form-errors" role="alert">Correct the search value and try again.</p>{% endif %}
+        <div class="button-row patient-search__actions">
+            <button type="submit">Search</button>
+            <a class="button button--secondary" href="{% url 'clinic_clinical:patient_index' %}">Clear</a>
+        </div>
+    </form>
+
     {% if patients %}
         <div class="clinical-record-list">
             {% for patient in patients %}
@@ -24,7 +38,7 @@
                         {% endif %}
                     </div>
                     <div class="button-row">
-                        <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' patient.patient_identifier %}">View medical history</a>
+                        <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' patient.patient_identifier %}?return_to={{ return_url|urlencode }}">View medical history</a>
                         {% if not patient.is_archived %}
                             <a class="button" href="{% url 'clinic_clinical:consultation_create' patient.patient_identifier %}">Record consultation</a>
                         {% endif %}
@@ -34,10 +48,28 @@
         </div>
     {% else %}
         <div class="empty-state">
-            <p>No patients are currently within your care scope.</p>
-            <p class="muted">Patients appear here when they have a non-cancelled appointment assigned to you or a clinical record you authored.</p>
-            <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">View your appointments</a>
+            {% if search_form.errors %}
+                <p>Clinical records were not searched because the search value is invalid.</p>
+            {% elif search_form.cleaned_data.query %}
+                <p>No clinical patients match this search.</p>
+            {% else %}
+                <p>No patients are currently within your care scope.</p>
+                <p class="muted">Patients appear here when they have a non-cancelled appointment assigned to you or a clinical record you authored.</p>
+                <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">View your appointments</a>
+            {% endif %}
         </div>
+    {% endif %}
+
+    {% if patients.paginator.num_pages > 1 %}
+        <nav class="pagination" aria-label="Clinical patient pages">
+            {% if patients.has_previous %}
+                <a href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ patients.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ patients.number }} of {{ patients.paginator.num_pages }}</span>
+            {% if patients.has_next %}
+                <a href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ patients.next_page_number }}">Next</a>
+            {% endif %}
+        </nav>
     {% endif %}
 </section>
 {% endblock %}

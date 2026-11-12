@@ -1,0 +1,69 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}{{ dashboard_title }} | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel dashboard-welcome">
+    <p class="eyebrow">Your Smart Clinic workspace</p>
+    <div class="page-header">
+        <div>
+            <h1>{{ dashboard_title }}</h1>
+            <p class="lead">Welcome back, {{ request.user.get_full_name|default:request.user.username }}.</p>
+        </div>
+        <span class="inline-status">{{ request.user.staff_profile.get_role_display }}</span>
+    </div>
+</section>
+
+<section class="panel panel--compact">
+    <div class="section-heading section-heading--inline">
+        <div>
+            <p class="eyebrow">Patient information</p>
+            <h2>Find a patient</h2>
+        </div>
+    </div>
+    <form method="get" action="{% url 'clinic_patients:patient_list' %}" class="patient-search" role="search">
+        <div>
+            <label for="nurse-patient-query">Name or patient ID</label>
+            <input id="nurse-patient-query" name="query" type="search" maxlength="100">
+        </div>
+        <div class="button-row patient-search__actions">
+            <button type="submit">Search patients</button>
+            <a class="button button--secondary" href="{% url 'clinic_patients:patient_list' %}">Open patient directory</a>
+        </div>
+    </form>
+</section>
+
+<section class="panel panel--compact">
+    <h2>Queue and activity</h2>
+    <div class="button-row">
+        <a class="button" href="{% url 'clinic_queue:board' %}">Manage today's queue</a>
+        <a class="button button--secondary" href="{% url 'clinic_reports:operations' %}">View nursing activity report</a>
+    </div>
+</section>
+
+<section class="panel panel--compact">
+    <div class="section-heading section-heading--inline">
+        <div>
+            <p class="eyebrow">Care coordination</p>
+            <h2>Today and upcoming appointments</h2>
+        </div>
+        <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">View full schedule</a>
+    </div>
+    {% if nurse_upcoming_appointments %}
+        <ul class="simple-list">
+            {% for appointment in nurse_upcoming_appointments %}
+                <li>
+                    <strong>{{ appointment.patient.patient_identifier }}</strong>
+                    <span>{{ appointment.appointment_at|date:"M j, Y, P" }} · {{ appointment.get_status_display }}</span>
+                    <a href="{% url 'clinic_appointments:appointment_detail' appointment.pk %}">View appointment</a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">There are no scheduled or confirmed appointments today or in the future.</p>
+    {% endif %}
+</section>
+
+<section class="panel panel--compact">
+    <h2>Authorized actions</h2>
+    <p class="muted">Patient demographics and appointment details are read-only. Nursing observations can be recorded from an appointment.</p>
+</section>
+{% endblock %}

@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -112,3 +113,86 @@ class MedicalHistoryEntry(TimeStampedModel):
 
     def __str__(self):
         return f"Medical history entry for {self.patient}"
+
+
+class NursingObservation(TimeStampedModel):
+    appointment = models.ForeignKey(
+        "clinic.Appointment",
+        on_delete=models.PROTECT,
+        related_name="nursing_observations",
+    )
+    recorded_by = models.ForeignKey(
+        "clinic.StaffProfile",
+        on_delete=models.PROTECT,
+        related_name="nursing_observations",
+    )
+    observed_at = models.DateTimeField(default=timezone.now)
+    body_temperature_celsius = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.1)],
+    )
+    pulse_rate_bpm = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(1)],
+    )
+    systolic_blood_pressure_mm_hg = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(1)],
+    )
+    diastolic_blood_pressure_mm_hg = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(1)],
+    )
+    respiratory_rate_bpm = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(1)],
+    )
+    weight_kg = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0.01)],
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-observed_at", "-pk"]
+
+    def clean(self):
+        super().clean()
+        if self.recorded_by_id and self.recorded_by.role != "nurse":
+            raise ValidationError(
+                {"recorded_by": "Only a Nurse may record a nursing observation."}
+            )
+        systolic = self.systolic_blood_pressure_mm_hg
+        diastolic = self.diastolic_blood_pressure_mm_hg
+        if (systolic is None) != (diastolic is None):
+            raise ValidationError(
+                "Enter both systolic and diastolic blood pressure values."
+            )
+        if all(
+            value is None
+            for value in (
+                self.body_temperature_celsius,
+                self.pulse_rate_bpm,
+                systolic,
+                diastolic,
+                self.respiratory_rate_bpm,
+                self.weight_kg,
+            )
+        ):
+            raise ValidationError("Enter at least one observation measurement.")
+
+    def __str__(self):
+        return (
+            f"Nursing observation for appointment {self.appointment_id} "
+            f"at {self.observed_at:%Y-%m-%d %H:%M}"
+        )

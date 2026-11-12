@@ -31,5 +31,8 @@ Repeated runs preserve a reminder's read state while its scheduled due time is
 unchanged. A changed schedule recalculates `scheduled_for` and resets read state
 so the clinician sees the changed appointment reminder again. Cancelled,
 completed/non-eligible, past, or inactive-recipient reminders are removed.
-No email, SMS, patient-facing notification, or appointment status transition is
-implemented by this command.
+This command only manages in-app reminder records. Staff email delivery is a
+separate, explicit operation documented in
+[`appointment_reminder_email.md`](./appointment_reminder_email.md). No SMS or
+patient-facing notification is implemented. Appointment attendance and queue
+transitions are managed separately through the clinic queue workflow.

@@ -29,10 +29,12 @@
 | `StaffProfile` | `clinic_staffprofile` | One-to-one role and staff information for a Django user; departments are many-to-many. |
 | `Patient` | `clinic_patient` | Canonical demographics, generated public identifier, archive state. |
 | `Appointment` | `clinic_appointment` | Scheduled interval, patient, assigned staff clinician, status and optional visit/cancellation text. |
+| `QueueEntry` | `clinic_queueentry` | One-to-one day-of-visit queue state and transition timestamps for an appointment. |
 | `Consultation` | `clinic_consultation` | Patient encounter notes, clinician, encounter time, optional appointment. |
 | `ConsultationRevision` | `clinic_consultationrevision` | Snapshot of prior consultation time, appointment, and text fields with the revising clinician; created when a consultation is amended. |
 | `MedicalHistoryEntry` | `clinic_medicalhistoryentry` | Discrete, attributable longitudinal history note; not a duplicate appointment note. |
-| `AppointmentNotification` | `clinic_appointmentnotification` | In-app notification/reminder record related to an appointment and optional recipient. |
+| `NursingObservation` | `clinic_nursingobservation` | Nurse-authored measurements and optional notes linked to an existing appointment; no edits/deletes are provided. |
+| `AppointmentNotification` | `clinic_appointmentnotification` | In-app reminder and bounded email-delivery attempt metadata for an appointment and staff recipient. |
 | `AuditEvent` | `clinic_auditevent` | Minimal event/actor/target metadata storage. Model creation does not create audit events automatically. |
 
 `StaffProfile.departments` also creates Django's implicit many-to-many join
@@ -49,9 +51,12 @@ from an abstract timestamp model. AuditEvent stores `occurred_at`.
 | StaffProfile | `account` protected OneToOneField to configured Django user; `staff_identifier` optional unique CharField(50); `role` CharField(20); `phone_number` optional CharField(30); `is_active` BooleanField; `departments` optional ManyToManyField. |
 | Patient | `patient_identifier` unique non-editable CharField(35); `full_name` CharField(200); required `gender` CharField(20) with approved choices; optional `date_of_birth` DateField, phone CharField(30), address TextField, emergency-contact name CharField(200), emergency-contact phone CharField(30); `is_archived` BooleanField. |
 | Appointment | protected Patient and StaffProfile ForeignKeys; `appointment_at` and `ends_at` DateTimeFields; optional `reason_for_visit` and `cancellation_reason` TextFields; `status` CharField(12). |
+| QueueEntry | protected OneToOneField to Appointment; queue `status`; check-in/call/start/completion timestamps; optional last-changing StaffProfile. |
+| AppointmentNotification | Appointment and optional Django-user recipient; reminder due/read timestamps; optional email sent/last-attempt timestamps, bounded attempt count, and generic provider error code. |
 | Consultation | protected patient and clinician ForeignKeys; optional protected appointment ForeignKey; `consultation_at` DateTimeField; optional symptoms, diagnosis, treatment, clinician notes TextFields. |
 | ConsultationRevision | protected consultation and revising clinician ForeignKeys; optional protected previous appointment ForeignKey; prior consultation time and symptoms, diagnosis, treatment, clinician-notes fields; timestamps. |
 | MedicalHistoryEntry | protected patient and author ForeignKeys; required `entry_text` TextField; optional `effective_date` DateField; `recorded_at` DateTimeField. |
+| NursingObservation | protected appointment and recording Nurse ForeignKeys; observation timestamp; optional temperature, pulse, paired blood-pressure values, respiratory rate, weight, and notes. |
 | AppointmentNotification | protected appointment ForeignKey; optional user recipient ForeignKey (`SET_NULL`); `notification_type` CharField(50); optional `scheduled_for` and `read_at` DateTimeFields. |
 | AuditEvent | optional actor user ForeignKey (`SET_NULL`); `action` CharField(100); `occurred_at` DateTimeField; optional ContentType ForeignKey (`SET_NULL`) and `object_id` CharField(64); `metadata` JSONField. |
 
@@ -74,6 +79,8 @@ does not reveal or reuse that key.
 | StaffProfile to Appointment | One clinician may have many appointments; appointment.clinician uses `PROTECT`. |
 | Patient to Consultation | One patient may have many consultations; consultation.patient uses `PROTECT`. |
 | Appointment to Consultation | Each consultation may have zero or one appointment; an appointment may have many consultations. Optional FK uses `PROTECT`. This resolves M01's open cardinality permissively and needs confirmation. |
+| Appointment to NursingObservation | One appointment may have many observations; each observation's patient is obtained through the required appointment FK. The appointment FK uses `PROTECT`. |
+| StaffProfile to NursingObservation | One Nurse may record many observations; the author FK uses `PROTECT`. The Nurse-only route and model validation restrict authorship to a Nurse. |
 | StaffProfile to Consultation | One clinician may author many consultations; FK uses `PROTECT`. |
 | Patient to MedicalHistoryEntry | One patient may have many entries; FK uses `PROTECT`. |
 | StaffProfile to MedicalHistoryEntry | One staff profile may author many entries; FK uses `PROTECT`. |
@@ -95,7 +102,13 @@ Database constraints:
 - Staff role limited to Administrator, Receptionist, Clinician, or Nurse.
 - Appointment status limited to Scheduled, Confirmed, Attended, Completed,
   Cancelled, or Missed.
+- Queue entry status limited to Waiting, Called, In consultation, or Completed;
+  one queue entry per appointment.
 - Appointment `ends_at` strictly later than `appointment_at`.
+- Nursing observations require at least one measurement and both blood-pressure
+  values together. The form/model validate positive values and representation
+  precision; no clinical threshold is imposed. Nurse route validation runs
+  before saving.
 - A non-null recipient may have only one `appointment_reminder` notification
   per appointment; other notification types and recipient-less historical rows
   are not covered by this conditional unique constraint.
@@ -108,6 +121,7 @@ Explicit query indexes:
 - Consultation by patient/consultation time.
 - Medical-history entry by patient/recorded time.
 - Notification by recipient/read time.
+- Queue entries by status/check-in time.
 - Audit event by actor/time, action/time, and generic target.
 
 The `reconcile_appointment_reminders` management command creates a reminder
@@ -117,6 +131,13 @@ appointments. It must be invoked periodically by an external scheduler; Django
 does not run the command automatically. See
 [appointment_reminders.md](./appointment_reminders.md) for invocation and
 polling-delay details.
+
+`send_appointment_reminder_emails` is a separate operator-invoked command. It
+uses Django's configured email backend and persists delivery attempts on the
+reminder notification; it is not part of reminder reconciliation. Queue
+transitions are stored in `QueueEntry`, while the existing appointment status
+changes to Attended at check-in and Completed when the queue visit is completed.
+See `clinic_queue_management.md` and `appointment_reminder_email.md`.
 
 Unique fields and foreign keys also receive database indexes as appropriate.
 There is no database constraint preventing overlapping appointment intervals.
@@ -143,9 +164,10 @@ Stored lowercase values and display labels:
 
 A database check rejects values outside this set. M07 allows managers to
 cancel appointments only from `scheduled` and `confirmed`; it does not permit
-editing or cancelling terminal/clinical states. Attendance, completion, and
-missed-state transitions are not implemented in M07. Cancellation is retained
-on the appointment and recorded in the existing AuditEvent table.
+editing or cancelling terminal/clinical states. The later queue extension
+changes appointments to `attended` on check-in and `completed` after a queue
+visit. Automatic transition to `missed` is not implemented. Cancellation is
+retained on the appointment and recorded in the existing AuditEvent table.
 
 ## 7. Patient identifier strategy
 
@@ -202,14 +224,24 @@ and notification scheduling are not automatically enforced by database schema.
   existing clinical records are rewritten by this migration.
 - Consultation amendments retain their previous version; separate medical
   history entries remain append-only and have no edit/delete workflow.
-- AuditEvent has no automatic event writer, immutability guarantee, or
-  tamper-protection. Do not put secrets or clinical-note contents in metadata.
+- `AuditEvent` has no automatic model-level writer or tamper-protection. The
+  shared audit service validates registered action names and event-specific
+  metadata for queue transitions, existing appointment/clinical writers, patient
+  create/update/archive/restore, staff account-management, and approved
+  authentication/session events. Patient and staff metadata contains
+  identifiers, changed field names, or approved state transitions, not
+  demographic or account values. Authentication metadata is empty; anonymous
+  events use a nullable actor only for the registered approved actions. Do
+  not put secrets, password hashes, or clinical-note contents in metadata.
 - Appointment conflict checks are application-level and do not prevent every
   concurrent-write race in SQLite. Availability, cancellation windows,
-  attendance/completion/missed transitions, external reminder delivery,
-  data-retention schedule, backups/restores, and deployment security are
-  deferred. Reminder record generation is implemented, but requires an
-  external scheduler invocation.
+  automatic missed-state detection, SMS delivery,
+  data-retention schedule, and deployment security are deferred. Explicit
+  SQLite online-backup and isolated-copy restore commands are documented in
+  `docs/database_backup.md`; backup schedule, retention, protected storage, and
+  recovery objectives remain unapproved. Reminder record generation is
+  implemented, but requires an external scheduler invocation. A synthetic
+  recovery demonstration uses temporary databases and does not test real data.
 - SQLite is for local development; concurrent use and production database
   selection have not been assessed.
 - No real patient data should be used for testing or demonstration.

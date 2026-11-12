@@ -6,9 +6,11 @@
         <div>
             <p class="eyebrow">Patient management</p>
             <h1>Patients</h1>
-            <p class="lead">Search and manage patient demographic records.</p>
+            <p class="lead">Search and review patient demographic records.</p>
         </div>
-        <a class="button" href="{% url 'clinic_patients:patient_create' %}">Register patient</a>
+        {% if can_manage_demographics %}
+            <a class="button" href="{% url 'clinic_patients:patient_create' %}">Register patient</a>
+        {% endif %}
     </div>
 
     <form method="get" class="patient-search" role="search">
@@ -17,11 +19,13 @@
             {{ search_form.query }}
             {% for error in search_form.query.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
         </div>
+        {% if can_manage_demographics %}
         <div>
             <label for="{{ search_form.status.id_for_label }}">Show</label>
             {{ search_form.status }}
             {% for error in search_form.status.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
         </div>
+        {% endif %}
         {% if search_form.non_field_errors %}<div class="form-errors" aria-live="polite">{{ search_form.non_field_errors }}</div>{% endif %}
         <div class="button-row patient-search__actions">
             <button type="submit">Search</button>
@@ -38,7 +42,7 @@
                     <th scope="col">Name</th>
                     <th scope="col">Gender</th>
                     <th scope="col">Date of birth</th>
-                    <th scope="col">Phone</th>
+                    {% if can_view_contact_details %}<th scope="col">Phone</th>{% endif %}
                     <th scope="col">Status</th>
                     <th scope="col">Action</th>
                 </tr>
@@ -50,7 +54,7 @@
                         <td>{{ patient.full_name }}</td>
                         <td>{{ patient.get_gender_display }}</td>
                         <td>{{ patient.date_of_birth|default:"—" }}</td>
-                        <td>{{ patient.phone_number|default:"—" }}</td>
+                        {% if can_view_contact_details %}<td>{{ patient.phone_number|default:"—" }}</td>{% endif %}
                         <td>
                             {% if patient.is_archived %}
                                 <span class="inline-status inline-status--inactive">Archived</span>
@@ -58,10 +62,10 @@
                                 <span class="inline-status">Active</span>
                             {% endif %}
                         </td>
-                        <td><a href="{% url 'clinic_patients:patient_profile' patient.patient_identifier %}">View record</a></td>
+                        <td><a href="{% url 'clinic_patients:patient_profile' patient.patient_identifier %}?return_to={{ request.get_full_path|urlencode }}">View record</a></td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="7">No patient records match these filters.</td></tr>
+                    <tr><td colspan="{% if can_view_contact_details %}7{% else %}6{% endif %}">No patient records match these filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

@@ -65,10 +65,18 @@ the server. Assigning the Administrator application role does not set Django
 - `/accounts/staff/<profile_id>/status/` — POST-only activate/deactivate;
   administrator.
 - `/appointments/` — appointment directory, search, filters, pagination;
-  administrator/receptionist, plus assigned appointments for clinicians.
+  administrator/receptionist, assigned appointments for clinicians, and
+  read-only full-schedule access for Nurses.
+- `/patients/` and `/patients/<patient_identifier>/` — administrator and
+  receptionist demographic management; Nurses may search and view active
+  demographics read-only, without contact details.
+- `/nursing/appointments/<appointment_id>/observations/new/` — Nurse-only
+  observation creation linked to the existing appointment and patient.
+- `/clinical/` — searchable, paginated clinical patient index; active
+  Doctor/Clinician, restricted to the existing care-scope queryset.
 - `/appointments/create/` — create appointment; administrator/receptionist.
 - `/appointments/<appointment_id>/` — details; administrator/receptionist or
-  the assigned clinician.
+  the assigned clinician, and Nurses for read-only appointment details.
 - `/appointments/<appointment_id>/edit/` — edit/reschedule Scheduled or
   Confirmed appointment; administrator/receptionist.
 - `/appointments/<appointment_id>/cancel/` — POST-only cancellation of
@@ -121,7 +129,7 @@ the existing administrator-protected staff-edit workflow.
 
 - Administrators and Receptionists manage all appointments. Clinicians can
   list and view only appointments assigned to their own active profile.
-  Nurses have no appointment-route access.
+  Nurses have read-only access to the full schedule.
 - Appointment creation selects an existing non-archived patient and an active
   clinician account/profile. A generated `AP-` identifier is a display value
   derived from the immutable appointment primary key; the database schema is
@@ -137,9 +145,15 @@ the existing administrator-protected staff-edit workflow.
   write `AuditEvent` records with the actor. Rescheduling metadata preserves
   the prior and new start/end values.
 - Only Scheduled and Confirmed appointments can be edited/rescheduled or
-  cancelled in M07. Cancellation is POST-only and retains the record and
-  cancellation event. Attendance, completion, and missed-state transitions
-  are deliberately outside M07 pending their later workflow rules.
+  cancelled. Cancellation is POST-only and retains the record and cancellation
+  event. The later queue extension handles same-day attendance/completion;
+  automatic missed-state transitions remain outside scope.
+- Nurse appointment views are read-only and omit visit and cancellation
+  reasons. Nurses cannot create, edit, reschedule, or cancel appointments.
+  The separate queue extension permits check-in/call actions, while Nurses
+  remain denied the administrator-only detailed appointment report and
+  clinician-only reminder list. Nurses may access the aggregate operational
+  report described in `role_permission_matrix.md`.
 - Appointments created from ordinary forms require a reason; the existing
   model retains `blank=True` so pre-existing records remain valid.
 
@@ -161,8 +175,14 @@ the existing administrator-protected staff-edit workflow.
   separately, newest first. New history entries are appended; separate
   history-entry editing/deletion is not provided.
 - Administrator and Receptionist clinical access is denied. Nurse clinical
-  access is not yet implemented because there is no nurse assignment
-  relationship or approved nursing-note workflow in the current schema.
+  access to consultations and longitudinal medical history remains denied;
+  no nurse assignment relationship is defined. Nurses may record observations
+  only for an existing appointment through the separate approved workflow.
+- Nursing observations link to the appointment and use the authenticated Nurse
+  as author. At least one measurement is required; blood pressure values are
+  paired, and no clinical thresholds or diagnosis are applied. Observation
+  creation and its registered audit event are atomic. Editing/deletion is not
+  provided.
 - Consultation amendments are limited to the original clinician. Before
   changing saved content, the system stores a `ConsultationRevision` snapshot
   of the prior time, appointment, and text fields plus the revising clinician.
@@ -173,8 +193,24 @@ the existing administrator-protected staff-edit workflow.
 - CSRF middleware and template tokens protect all state-changing forms.
 - Login, role, and active-profile checks are server-side.
 - Django password hashing and configured password validation are used.
+- Environment-specific Django security settings are selected through the
+  required `DJANGO_ENV` variable; production requires explicit hosts, HTTPS/
+  HSTS policy, and a non-console email backend. See
+  `docs/security_configuration.md`.
 - Staff creation does not grant Django admin-site or superuser privileges.
 - Account edits and status changes use database transactions.
+- Successful web staff account creation, profile updates, role/department
+  changes, activation, and deactivation record actor-attributed audit events
+  in the same transaction. Event metadata uses the staff profile target,
+  account ID, and changed field names; it excludes account values, passwords,
+  and hashes. The first-administrator bootstrap command has no authenticated
+  request actor and is not covered pending an approved attribution rule.
+- Login success/failure, logout, password change, and password-reset request/
+  completion record the approved authentication audit events. Metadata is
+  empty; only reliably identified accounts are targets. Login success is
+  rejected if its event cannot be persisted, while password changes and reset
+  completion roll back with event-write failure. Logout still terminates the
+  session; reset requests retain their generic response if event storage fails.
 - Appointment authorization, assigned-clinician filtering, status checks,
   schedule conflict validation, audit events, and cancellation are enforced
   server-side.

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from django import forms
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -131,6 +131,16 @@ class AppointmentSearchForm(forms.Form):
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
     )
+    start_date = forms.DateField(
+        label="From date",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    end_date = forms.DateField(
+        label="To date",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
     status = forms.ChoiceField(
         label="Status",
         required=False,
@@ -165,6 +175,16 @@ class AppointmentSearchForm(forms.Form):
     def clean_query(self):
         return self.cleaned_data["query"].strip()
 
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and start_date > end_date:
+            raise ValidationError(
+                "The start date must be on or before the end date."
+            )
+        return cleaned_data
+
     def appointment_pk_from_query(self):
         query = self.cleaned_data.get("query", "")
         match = re.fullmatch(r"AP-(\d+)", query, flags=re.IGNORECASE)
@@ -173,3 +193,26 @@ class AppointmentSearchForm(forms.Form):
         if query.isdecimal():
             return int(query)
         return None
+
+
+class AppointmentReportForm(forms.Form):
+    start_date = forms.DateField(
+        label="From date",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    end_date = forms.DateField(
+        label="To date",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and start_date > end_date:
+            raise ValidationError(
+                "The start date must be on or before the end date."
+            )
+        return cleaned_data

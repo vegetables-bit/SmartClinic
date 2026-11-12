@@ -2,11 +2,12 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import DatabaseError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from clinic.models import Appointment, Department, Patient, StaffProfile
+from clinic.models import AuditEvent, Appointment, Department, Patient, StaffProfile
 
 User = get_user_model()
 
@@ -83,6 +84,20 @@ class PatientManagementTests(TestCase):
         self.assertRegex(created.patient_identifier, r"^PT-[A-F0-9]{32}$")
         self.assertEqual(created.date_of_birth, date(1985, 3, 14))
         self.assertFalse(created.is_archived)
+        event = AuditEvent.objects.get(action="patient.created")
+        self.assertEqual(event.actor, self.profiles[StaffProfile.Role.RECEPTIONIST].account)
+        self.assertEqual(event.content_object, created)
+        self.assertEqual(
+            event.metadata,
+            {
+                "patient_identifier": created.patient_identifier,
+                "record_id": created.pk,
+            },
+        )
+        self.assertNotIn("Fictional New Patient", str(event.metadata))
+        self.assertNotIn("34 Example Avenue", str(event.metadata))
+        self.assertNotIn("555-0110", str(event.metadata))
+        self.assertNotIn("Fictional Relative", str(event.metadata))
 
     def test_required_full_name_is_validated(self):
         self.login_as(StaffProfile.Role.RECEPTIONIST)
@@ -95,6 +110,7 @@ class PatientManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["form"].errors)
         self.assertFalse(Patient.objects.filter(full_name="").exists())
+        self.assertFalse(AuditEvent.objects.filter(action="patient.created").exists())
 
     def test_future_date_of_birth_is_rejected(self):
         self.login_as(StaffProfile.Role.RECEPTIONIST)
@@ -154,6 +170,24 @@ class PatientManagementTests(TestCase):
         )
         self.assertNotIn("sqlite", response.content.decode().lower())
         self.assertEqual(Patient.objects.count(), 1)
+        self.assertFalse(AuditEvent.objects.filter(action="patient.created").exists())
+
+    def test_invalid_patient_edit_does_not_create_audit_event(self):
+        self.login_as(StaffProfile.Role.RECEPTIONIST)
+
+        response = self.client.post(
+            reverse(
+                "clinic_patients:patient_edit",
+                args=[self.patient.patient_identifier],
+            ),
+            self.registration_data(full_name="   "),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors)
+        self.assertFalse(
+            AuditEvent.objects.filter(action="patient.demographics_updated").exists()
+        )
 
     def test_patient_list_and_profile_render_demographic_data_only(self):
         self.login_as(StaffProfile.Role.RECEPTIONIST)
@@ -199,6 +233,50 @@ class PatientManagementTests(TestCase):
         self.assertEqual(self.patient.full_name, "Fictional Updated Patient")
         self.assertEqual(self.patient.date_of_birth, date(1980, 6, 1))
         self.assertEqual(self.patient.patient_identifier, patient_identifier)
+        event = AuditEvent.objects.get(action="patient.demographics_updated")
+        self.assertEqual(event.actor, self.profiles[StaffProfile.Role.RECEPTIONIST].account)
+        self.assertEqual(event.content_object, self.patient)
+        self.assertEqual(
+            event.metadata,
+            {
+                "patient_identifier": patient_identifier,
+                "record_id": self.patient.pk,
+                "changed_fields": [
+                    "full_name",
+                    "date_of_birth",
+                    "phone_number",
+                    "address",
+                    "emergency_contact_name",
+                    "emergency_contact_phone",
+                ],
+            },
+        )
+        self.assertNotIn("Fictional Updated Patient", str(event.metadata))
+        self.assertNotIn("1980-06-01", str(event.metadata))
+
+    def test_unchanged_patient_submission_does_not_create_audit_event(self):
+        self.login_as(StaffProfile.Role.RECEPTIONIST)
+
+        response = self.client.post(
+            reverse(
+                "clinic_patients:patient_edit",
+                args=[self.patient.patient_identifier],
+            ),
+            {
+                "full_name": self.patient.full_name,
+                "gender": self.patient.gender,
+                "date_of_birth": "",
+                "phone_number": self.patient.phone_number,
+                "address": self.patient.address,
+                "emergency_contact_name": self.patient.emergency_contact_name,
+                "emergency_contact_phone": self.patient.emergency_contact_phone,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(
+            AuditEvent.objects.filter(action="patient.demographics_updated").exists()
+        )
 
     def test_search_matches_identifier_name_and_phone(self):
         self.login_as(StaffProfile.Role.RECEPTIONIST)
@@ -218,6 +296,37 @@ class PatientManagementTests(TestCase):
                     list(response.context["patients"].object_list),
                     [self.patient],
                 )
+
+    def test_patient_detail_return_navigation_preserves_only_safe_list_url(self):
+        self.login_as(StaffProfile.Role.RECEPTIONIST)
+        list_url = reverse("clinic_patients:patient_list")
+        profile_url = reverse(
+            "clinic_patients:patient_profile",
+            args=[self.patient.patient_identifier],
+        )
+        return_to = f"{list_url}?query=Fictional%20Patient&status=active"
+
+        list_response = self.client.get(list_url, {"query": "Fictional Patient"})
+        self.assertContains(
+            list_response,
+            f'href="{profile_url}?return_to=',
+        )
+        profile_response = self.client.get(
+            profile_url,
+            {"return_to": return_to},
+        )
+        unsafe_response = self.client.get(
+            profile_url,
+            {"return_to": "https://example.invalid/patients/"},
+        )
+
+        self.assertEqual(profile_response.context["return_url"], return_to)
+        self.assertContains(
+            profile_response,
+            'href="/patients/?query=Fictional%20Patient&amp;status=active"',
+            html=False,
+        )
+        self.assertEqual(unsafe_response.context["return_url"], "")
 
     def test_invalid_search_input_returns_validation_feedback(self):
         self.login_as(StaffProfile.Role.RECEPTIONIST)
@@ -268,6 +377,21 @@ class PatientManagementTests(TestCase):
         self.patient.refresh_from_db()
         self.assertTrue(self.patient.is_archived)
         self.assertTrue(Appointment.objects.filter(pk=appointment.pk).exists())
+        archive_event = AuditEvent.objects.get(action="patient.archived")
+        self.assertEqual(
+            archive_event.actor,
+            self.profiles[StaffProfile.Role.ADMINISTRATOR].account,
+        )
+        self.assertEqual(archive_event.content_object, self.patient)
+        self.assertEqual(
+            archive_event.metadata,
+            {
+                "patient_identifier": self.patient.patient_identifier,
+                "record_id": self.patient.pk,
+                "previous_is_archived": False,
+                "is_archived": True,
+            },
+        )
 
         active_list = self.client.get(reverse("clinic_patients:patient_list"))
         archived_list = self.client.get(
@@ -287,6 +411,46 @@ class PatientManagementTests(TestCase):
         self.patient.refresh_from_db()
         self.assertFalse(self.patient.is_archived)
         self.assertTrue(Appointment.objects.filter(pk=appointment.pk).exists())
+        restore_event = AuditEvent.objects.get(action="patient.restored")
+        self.assertEqual(
+            restore_event.actor,
+            self.profiles[StaffProfile.Role.ADMINISTRATOR].account,
+        )
+        self.assertEqual(restore_event.content_object, self.patient)
+        self.assertEqual(
+            restore_event.metadata,
+            {
+                "patient_identifier": self.patient.patient_identifier,
+                "record_id": self.patient.pk,
+                "previous_is_archived": True,
+                "is_archived": False,
+            },
+        )
+
+    def test_repeated_archive_and_restore_do_not_create_events(self):
+        self.login_as(StaffProfile.Role.ADMINISTRATOR)
+        archive_url = reverse(
+            "clinic_patients:patient_archive",
+            args=[self.patient.patient_identifier],
+        )
+        restore_url = reverse(
+            "clinic_patients:patient_restore",
+            args=[self.patient.patient_identifier],
+        )
+
+        self.client.post(archive_url)
+        self.client.post(archive_url)
+        self.client.post(restore_url)
+        self.client.post(restore_url)
+
+        self.assertEqual(
+            AuditEvent.objects.filter(action="patient.archived").count(),
+            1,
+        )
+        self.assertEqual(
+            AuditEvent.objects.filter(action="patient.restored").count(),
+            1,
+        )
 
     def test_archive_and_restore_are_post_only(self):
         self.login_as(StaffProfile.Role.ADMINISTRATOR)
@@ -358,26 +522,46 @@ class PatientManagementTests(TestCase):
         self.assertEqual(restore_response.status_code, 403)
         self.patient.refresh_from_db()
         self.assertFalse(self.patient.is_archived)
+        self.assertFalse(
+            AuditEvent.objects.filter(
+                action__in=("patient.archived", "patient.restored")
+            ).exists()
+        )
 
-    def test_clinician_and_nurse_cannot_access_patient_management(self):
-        urls = (
-            reverse("clinic_patients:patient_list"),
+    def test_clinicians_are_denied_patient_directory_and_nurses_have_read_only_access(self):
+        list_url = reverse("clinic_patients:patient_list")
+        profile_url = reverse(
+            "clinic_patients:patient_profile",
+            args=[self.patient.patient_identifier],
+        )
+        for url in (
+            list_url,
+            profile_url,
             reverse("clinic_patients:patient_create"),
-            reverse(
-                "clinic_patients:patient_profile",
-                args=[self.patient.patient_identifier],
-            ),
             reverse(
                 "clinic_patients:patient_edit",
                 args=[self.patient.patient_identifier],
             ),
-        )
-        for role in (StaffProfile.Role.CLINICIAN, StaffProfile.Role.NURSE):
-            self.login_as(role)
-            for url in urls:
-                with self.subTest(role=role, url=url):
-                    response = self.client.get(url)
-                    self.assertEqual(response.status_code, 403)
+        ):
+            self.login_as(StaffProfile.Role.CLINICIAN)
+            with self.subTest(role="clinician", url=url):
+                self.assertEqual(self.client.get(url).status_code, 403)
+
+        self.login_as(StaffProfile.Role.NURSE)
+        self.assertEqual(self.client.get(list_url).status_code, 200)
+        profile_response = self.client.get(profile_url)
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertContains(profile_response, "Patient ID")
+        self.assertNotContains(profile_response, "Edit demographics")
+        for url in (
+            reverse("clinic_patients:patient_create"),
+            reverse(
+                "clinic_patients:patient_edit",
+                args=[self.patient.patient_identifier],
+            ),
+        ):
+            with self.subTest(role="nurse", url=url):
+                self.assertEqual(self.client.get(url).status_code, 403)
 
     def test_clinician_and_nurse_cannot_create_or_edit_patients_by_post(self):
         create_url = reverse("clinic_patients:patient_create")
@@ -404,6 +588,65 @@ class PatientManagementTests(TestCase):
                 full_name="Unauthorized Fictional Change"
             ).exists()
         )
+        self.assertFalse(
+            AuditEvent.objects.filter(
+                action__in=("patient.created", "patient.demographics_updated")
+            ).exists()
+        )
+
+    def test_patient_changes_roll_back_when_audit_event_creation_fails(self):
+        self.login_as(StaffProfile.Role.ADMINISTRATOR)
+        create_url = reverse("clinic_patients:patient_create")
+        edit_url = reverse(
+            "clinic_patients:patient_edit",
+            args=[self.patient.patient_identifier],
+        )
+        archive_url = reverse(
+            "clinic_patients:patient_archive",
+            args=[self.patient.patient_identifier],
+        )
+        restore_url = reverse(
+            "clinic_patients:patient_restore",
+            args=[self.patient.patient_identifier],
+        )
+
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.patient_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(create_url, self.registration_data())
+        self.assertFalse(
+            Patient.objects.filter(full_name="Fictional New Patient").exists()
+        )
+
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.patient_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(
+                edit_url,
+                self.registration_data(full_name="Audit Failure Change"),
+            )
+        self.patient.refresh_from_db()
+        self.assertEqual(self.patient.full_name, "Fictional Patient")
+
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.patient_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(archive_url)
+        self.patient.refresh_from_db()
+        self.assertFalse(self.patient.is_archived)
+
+        self.patient.is_archived = True
+        self.patient.save(update_fields=("is_archived", "updated_at"))
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.patient_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(restore_url)
+        self.patient.refresh_from_db()
+        self.assertTrue(self.patient.is_archived)
 
     def test_unauthenticated_users_cannot_access_patient_records(self):
         patient_identifier = self.patient.patient_identifier
@@ -445,6 +688,9 @@ class PatientManagementTests(TestCase):
                 response = getattr(self.client, method)(url)
                 self.assertEqual(response.status_code, 302)
                 self.assertIn(reverse("clinic_auth:login"), response.url)
+        self.assertFalse(
+            AuditEvent.objects.filter(action__startswith="patient.").exists()
+        )
 
     def test_unknown_patient_identifier_returns_404_without_database_details(self):
         self.login_as(StaffProfile.Role.RECEPTIONIST)

@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
+from config.security_settings import load_security_settings
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,21 +23,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# Set DJANGO_SECRET_KEY in the environment before running Django commands.
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
-if not SECRET_KEY:
-    raise ImproperlyConfigured(
-        'Set the DJANGO_SECRET_KEY environment variable before starting Django.'
-    )
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = [
-    'localhost',
-    '127.0.0.1',
-    'testserver',
-]
+SECURITY_SETTINGS = load_security_settings(os.environ)
+ENVIRONMENT = SECURITY_SETTINGS["ENVIRONMENT"]
+SECRET_KEY = SECURITY_SETTINGS["SECRET_KEY"]
+DEBUG = SECURITY_SETTINGS["DEBUG"]
+ALLOWED_HOSTS = SECURITY_SETTINGS["ALLOWED_HOSTS"]
+SECURE_SSL_REDIRECT = SECURITY_SETTINGS["SECURE_SSL_REDIRECT"]
+SECURE_HSTS_SECONDS = SECURITY_SETTINGS["SECURE_HSTS_SECONDS"]
+SESSION_COOKIE_SECURE = SECURITY_SETTINGS["SESSION_COOKIE_SECURE"]
+CSRF_COOKIE_SECURE = SECURITY_SETTINGS["CSRF_COOKIE_SECURE"]
 
 
 # Application definition
@@ -142,13 +137,33 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = 'Lax'
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+MAILERS = SECURITY_SETTINGS["MAILERS"]
+EMAIL_BACKEND = "clinic.email_backend.MailerRouterBackend"
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DJANGO_DEFAULT_FROM_EMAIL",
+    "Smart Clinic <no-reply@localhost>",
+)
+EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
+
+
+def _email_flag(name):
+    value = os.environ.get(name, "false").lower()
+    if value not in {"true", "false"}:
+        raise ImproperlyConfigured(f"{name} must be 'true' or 'false'.")
+    return value == "true"
+
+
+EMAIL_USE_TLS = _email_flag("DJANGO_EMAIL_USE_TLS")
+EMAIL_USE_SSL = _email_flag("DJANGO_EMAIL_USE_SSL")
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured("Configure only one of DJANGO_EMAIL_USE_TLS or DJANGO_EMAIL_USE_SSL.")

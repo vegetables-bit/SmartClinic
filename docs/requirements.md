@@ -168,9 +168,11 @@ narrow technical or workflow detail, not a pending approval of M01:
   model or portal is implemented.
 - Detailed staff onboarding steps, authentication factors, session policy,
   account recovery, and external identity-provider integration.
-- Detailed clinician-to-patient assignment rules, nurse documentation scope,
-  and any exceptional administrator access beyond the role matrix in
-  `role_permission_matrix.md`.
+- Detailed clinician-to-patient assignment rules and any exceptional
+  administrator access beyond the role matrix in
+  `role_permission_matrix.md`. The current Nurse scope is recorded separately
+  in that matrix and includes read-only active demographics, read-only
+  appointment schedule access, and appointment-linked observations.
 - Identifier formatting beyond the uniqueness requirements, duplicate-record
   resolution, patient correction/merge procedures, and archival/reactivation
   workflow details beyond the implemented soft-archive behavior.
@@ -213,11 +215,12 @@ policies were approved:
   their patient or clinician is already booked; cancelled appointments are
   excluded. This check is application-level in SQLite.
 - Administrators and Receptionists manage appointment logistics. Clinicians
-  may view only their own assigned appointments; Nurses have no appointment
-  route access in M07.
-- M07 permits cancellation from Scheduled or Confirmed only. Other attendance,
-  completion, and missed-state transitions are deferred rather than assigned
-  to a role without a specific approved transition workflow.
+  may view only their own assigned appointments; Nurses have read-only
+  full-schedule access under the separately approved Nurse scope.
+- The original M07 baseline permitted cancellation from Scheduled or
+  Confirmed only. The later owner-directed mini-project extension defines
+  same-day check-in and queue completion in `clinic_queue_management.md`;
+  automatic missed-state transitions remain out of scope.
 - The displayed appointment identifier is a stable `AP-` prefix plus a
   zero-padded database primary key; no new identifier column is required.
 
@@ -249,10 +252,26 @@ schema within the approved project baseline:
 - Medical history is represented by separately authored text entries to avoid
   copying consultation diagnosis/treatment into a second record.
 - Appointment notifications store in-app metadata; no external channel or
-  delivery behavior exists. Audit events have a storage model only; no
-  automatic sensitive-action logging exists.
+  delivery behavior exists. `AuditEvent` is not an automatic model-level
+  writer, but explicit appointment, clinical, patient, staff-management, and
+  approved authentication/session workflow writers are present; coverage remains
+  partial. See
+  [audit_logging_requirements.md](./audit_logging_requirements.md) for the
+  proposed coverage and decisions requiring approval.
 
 These entries describe the current database implementation and its remaining
 technical/workflow limits; they do not defer or supersede the approved M01
 requirements. Implemented fields, relationships, and integrity boundaries are
 documented in [database_design.md](./database_design.md).
+
+## Current mini-project implementation additions
+
+The current implementation adds an explicit same-day queue workflow for
+check-in, calling, consultation start, and completion; role-scoped aggregate
+operational reports; and separately invoked clinician reminder email delivery.
+The queue and delivery details and their access boundaries are documented in
+`clinic_queue_management.md`, `role_specific_reports.md`, and
+`appointment_reminder_email.md`. These implementation details do not claim
+automatic no-show detection, patient-facing messaging, or clinical outcome
+analytics. The synthetic recovery demonstration measures the backup helpers
+without connecting to clinic data.

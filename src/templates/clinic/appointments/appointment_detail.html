@@ -18,8 +18,10 @@
         <div><dt>Clinician</dt><dd>{{ appointment.clinician.account.get_full_name|default:appointment.clinician.account.username }}</dd></div>
         <div><dt>Start</dt><dd>{{ appointment.appointment_at|date:"M j, Y, P" }}</dd></div>
         <div><dt>End</dt><dd>{{ appointment.ends_at|date:"M j, Y, P" }}</dd></div>
-        <div class="appointment-details__wide"><dt>Reason for visit</dt><dd>{{ appointment.reason_for_visit|linebreaksbr }}</dd></div>
-        {% if appointment.status == "cancelled" and appointment.cancellation_reason %}
+        {% if can_view_appointment_reason %}
+            <div class="appointment-details__wide"><dt>Reason for visit</dt><dd>{{ appointment.reason_for_visit|linebreaksbr }}</dd></div>
+        {% endif %}
+        {% if can_view_appointment_reason and appointment.status == "cancelled" and appointment.cancellation_reason %}
             <div class="appointment-details__wide"><dt>Cancellation reason</dt><dd>{{ appointment.cancellation_reason|linebreaksbr }}</dd></div>
         {% endif %}
         <div><dt>Created</dt><dd><time datetime="{{ appointment.created_at|date:'c' }}">{{ appointment.created_at|date:"M j, Y, P" }}</time></dd></div>
@@ -27,7 +29,7 @@
     </dl>
 
     <div class="button-row appointment-detail__actions">
-        <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_list' %}">Back to appointments</a>
+        <a class="button button--secondary" href="{% if return_url %}{{ return_url }}{% else %}{% url 'clinic_appointments:appointment_list' %}{% endif %}">Back to appointments</a>
         {% if request.user.staff_profile.role == "clinician" and can_view_patient_history %}
             <a class="button button--secondary" href="{% url 'clinic_clinical:patient_history' appointment.patient.patient_identifier %}">Patient medical history</a>
         {% endif %}
@@ -49,4 +51,31 @@
         {% endif %}
     </div>
 </section>
+{% if can_record_nursing_observation %}
+<section class="panel panel--compact">
+    <div class="section-heading section-heading--inline">
+        <div>
+            <p class="eyebrow">Nursing record</p>
+            <h2>Observations</h2>
+        </div>
+        <a class="button" href="{% url 'clinic_nursing:observation_create' appointment.pk %}">Record observation</a>
+    </div>
+    {% for observation in nursing_observations %}
+        <article class="clinical-record">
+            <h3><time datetime="{{ observation.observed_at|date:'c' }}">{{ observation.observed_at|date:"M j, Y, P" }}</time></h3>
+            <p>
+                {% if observation.body_temperature_celsius != None %}Temperature: {{ observation.body_temperature_celsius }} °C · {% endif %}
+                {% if observation.pulse_rate_bpm != None %}Pulse: {{ observation.pulse_rate_bpm }} beats/min · {% endif %}
+                {% if observation.systolic_blood_pressure_mm_hg != None %}Blood pressure: {{ observation.systolic_blood_pressure_mm_hg }}/{{ observation.diastolic_blood_pressure_mm_hg }} mm Hg · {% endif %}
+                {% if observation.respiratory_rate_bpm != None %}Respiratory rate: {{ observation.respiratory_rate_bpm }} breaths/min · {% endif %}
+                {% if observation.weight_kg != None %}Weight: {{ observation.weight_kg }} kg{% endif %}
+            </p>
+            {% if observation.notes %}<p>{{ observation.notes|linebreaksbr }}</p>{% endif %}
+            <p class="muted">Recorded by {{ observation.recorded_by.account.get_full_name|default:observation.recorded_by.account.username }}</p>
+        </article>
+    {% empty %}
+        <p class="muted">No nursing observations have been recorded for this appointment.</p>
+    {% endfor %}
+</section>
+{% endif %}
 {% endblock %}

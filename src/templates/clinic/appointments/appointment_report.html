@@ -1,0 +1,56 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Appointment report | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <div class="page-header">
+        <div>
+            <p class="eyebrow">Operational reporting</p>
+            <h1>Appointment report</h1>
+            <p class="lead">Appointment totals by status for the selected local calendar-date range.</p>
+        </div>
+    </div>
+
+    <form method="get" class="report-filter" aria-label="Filter appointment report">
+        {% for field in report_form %}
+            <div>
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<ul class="errorlist" aria-live="polite">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+        {% endfor %}
+        {% if report_form.non_field_errors %}<div class="form-errors" aria-live="polite">{{ report_form.non_field_errors }}</div>{% endif %}
+        <div class="button-row report-filter__actions">
+            <button type="submit">Run report</button>
+            <a class="button button--secondary" href="{% url 'clinic_appointments:appointment_report' %}">Clear dates</a>
+        </div>
+    </form>
+
+    {% if report_form.is_valid %}
+        {% if report_form.start_date.value or report_form.end_date.value %}
+            <p class="muted">
+                {% if report_form.start_date.value %}From {{ report_form.start_date.value }}{% else %}From any date{% endif %}
+                {% if report_form.end_date.value %} through {{ report_form.end_date.value }}{% else %} through any date{% endif %}
+                (inclusive).
+            </p>
+        {% else %}
+            <p class="muted">No date bounds selected; counts include all appointment dates.</p>
+        {% endif %}
+
+        <p class="report-total"><strong>Total appointments:</strong> {{ total_appointments }}</p>
+        <div class="table-shell">
+            <table>
+                <caption class="visually-hidden">Appointment counts grouped by status</caption>
+                <thead><tr><th scope="col">Status</th><th scope="col">Appointments</th></tr></thead>
+                <tbody>
+                    {% for status in status_counts %}
+                        <tr><th scope="row">{{ status.label }}</th><td>{{ status.total }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if not has_results %}
+            <p class="muted" role="status">No appointments match the selected date range.</p>
+        {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

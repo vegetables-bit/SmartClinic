@@ -6,10 +6,11 @@ from urllib.parse import urlsplit
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core import mail
+from django.db import DatabaseError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from clinic.models import Department, StaffProfile
+from clinic.models import AuditEvent, Department, StaffProfile
 
 User = get_user_model()
 TEST_PASSWORD = "S3cure-Clinic-Password-927!"
@@ -61,8 +62,30 @@ class AuthenticationAndAuthorizationTests(TestCase):
 
         self.assertRedirects(response, reverse("clinic_auth:staff_home"))
         self.assertTrue(response.wsgi_request.user.is_authenticated)
+        event = AuditEvent.objects.get(action="auth.login.succeeded")
+        self.assertEqual(event.actor, self.admin_profile.account)
+        self.assertEqual(event.content_object, self.admin_profile.account)
+        self.assertEqual(event.metadata, {})
         self.assertFalse(self.admin_profile.account.is_staff)
         self.assertFalse(self.admin_profile.account.is_superuser)
+
+    def test_successful_login_audit_failure_does_not_establish_a_session(self):
+        with self.assertLogs("clinic.auth_views", level="ERROR") as log_output:
+            with patch(
+                "clinic.auth_views.record_audit_event",
+                side_effect=DatabaseError("storage failure"),
+            ):
+                response = self.post_login()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertContains(
+            response,
+            "Sign-in could not be completed. Please try again.",
+            status_code=503,
+        )
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertFalse(AuditEvent.objects.exists())
+        self.assertNotIn(TEST_PASSWORD, "\n".join(log_output.output))
 
     def test_login_page_uses_common_smart_clinic_wording(self):
         response = self.client.get(reverse("clinic_auth:login"))
@@ -93,6 +116,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
                     response,
                     reverse("clinic_auth:staff_home"),
                 )
+                event = AuditEvent.objects.get(
+                    action="auth.login.succeeded",
+                    actor=profile.account,
+                )
+                self.assertEqual(event.content_object, profile.account)
+                self.assertEqual(event.metadata, {})
                 dashboard = self.client.get(response.url)
                 self.assertContains(
                     dashboard,
@@ -154,6 +183,40 @@ class AuthenticationAndAuthorizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Please enter a correct")
         self.assertNotContains(response, "admin@example.test")
+        event = AuditEvent.objects.get(action="auth.login.failed")
+        self.assertIsNone(event.actor)
+        self.assertIsNone(event.content_object)
+        self.assertEqual(event.metadata, {})
+        self.assertFalse(
+            AuditEvent.objects.filter(action="auth.login.succeeded").exists()
+        )
+
+    def test_invalid_login_without_credentials_does_not_create_failure_event(self):
+        response = self.client.post(
+            reverse("clinic_auth:login"),
+            {"username": "", "password": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            AuditEvent.objects.filter(action="auth.login.failed").exists()
+        )
+
+    def test_failed_login_audit_failure_keeps_generic_response(self):
+        with self.assertLogs("clinic.auth_views", level="ERROR") as log_output:
+            with patch(
+                "clinic.auth_views.record_audit_event",
+                side_effect=DatabaseError("storage failure"),
+            ):
+                response = self.client.post(
+                    reverse("clinic_auth:login"),
+                    {"username": "admin", "password": "invalid-password"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Please enter a correct")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertNotIn(TEST_PASSWORD, "\n".join(log_output.output))
 
     def test_login_accepts_staff_identifier(self):
         profile = self.create_staff(
@@ -214,9 +277,31 @@ class AuthenticationAndAuthorizationTests(TestCase):
         response = self.client.post(logout_url)
 
         self.assertRedirects(response, reverse("clinic_auth:login"))
+        event = AuditEvent.objects.get(action="auth.logout")
+        self.assertEqual(event.actor, self.admin_profile.account)
+        self.assertEqual(event.content_object, self.admin_profile.account)
+        self.assertEqual(event.metadata, {})
         protected = self.client.get(reverse("clinic_auth:staff_home"))
         self.assertEqual(protected.status_code, 302)
         self.assertIn(reverse("clinic_auth:login"), protected.url)
+
+    def test_logout_audit_failure_still_terminates_session(self):
+        self.client.force_login(self.admin_profile.account)
+
+        with self.assertLogs("clinic.auth_views", level="ERROR") as log_output:
+            with patch(
+                "clinic.auth_views.record_audit_event",
+                side_effect=DatabaseError("storage failure"),
+            ):
+                response = self.client.post(reverse("clinic_auth:logout"))
+
+        self.assertRedirects(response, reverse("clinic_auth:login"))
+        self.assertEqual(
+            self.client.get(reverse("clinic_auth:staff_home")).status_code,
+            302,
+        )
+        self.assertFalse(AuditEvent.objects.exists())
+        self.assertNotIn(TEST_PASSWORD, "\n".join(log_output.output))
 
     def test_all_four_active_roles_can_access_staff_home_and_change_password(self):
         profiles = [
@@ -325,6 +410,7 @@ class AuthenticationAndAuthorizationTests(TestCase):
         self.assertEqual(edit_response.status_code, 403)
         self.assertEqual(status_response.status_code, 403)
         self.assertFalse(User.objects.filter(username="attempted").exists())
+        self.assertFalse(AuditEvent.objects.exists())
         target.account.refresh_from_db()
         self.assertNotEqual(target.account.first_name, "Changed")
         target.refresh_from_db()
@@ -362,6 +448,38 @@ class AuthenticationAndAuthorizationTests(TestCase):
         self.assertEqual(profile.role, StaffProfile.Role.CLINICIAN)
         self.assertEqual(profile.staff_identifier, "ST-NEW")
         self.assertEqual(list(profile.departments.all()), [self.department])
+        event = AuditEvent.objects.get(action="staff.account.created")
+        self.assertEqual(event.actor, self.admin_profile.account)
+        self.assertEqual(event.content_object, profile)
+        self.assertEqual(event.metadata, {"account_id": user.pk})
+        metadata = str(event.metadata)
+        self.assertNotIn(TEST_PASSWORD, metadata)
+        self.assertNotIn(user.password, metadata)
+        self.assertNotIn(user.email, metadata)
+        self.assertNotIn(user.username, metadata)
+
+    def test_staff_create_does_not_commit_when_audit_write_fails(self):
+        self.client.force_login(self.admin_profile.account)
+        data = {
+            "username": "audit-failure-create",
+            "first_name": "Fictional",
+            "last_name": "Staff",
+            "email": "audit-failure-create@example.test",
+            "role": StaffProfile.Role.NURSE,
+            "password1": TEST_PASSWORD,
+            "password2": TEST_PASSWORD,
+        }
+
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.auth_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(
+                reverse("clinic_auth:staff_account_create"),
+                data,
+            )
+
+        self.assertFalse(User.objects.filter(username="audit-failure-create").exists())
 
     def test_admin_can_assign_each_defined_role(self):
         self.client.force_login(self.admin_profile.account)
@@ -392,6 +510,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
                 )
                 self.assertEqual(profile.role, role)
                 self.assertTrue(profile.staff_identifier.startswith("ST-"))
+                event = AuditEvent.objects.get(
+                    action="staff.account.created",
+                    object_id=str(profile.pk),
+                )
+                self.assertEqual(event.actor, self.admin_profile.account)
+                self.assertEqual(event.metadata, {"account_id": profile.account_id})
 
     def test_first_admin_command_creates_non_superuser_with_hashed_password(self):
         output = StringIO()
@@ -437,6 +561,7 @@ class AuthenticationAndAuthorizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username="invalid-role").exists())
         self.assertTrue(response.context["form"].errors)
+        self.assertFalse(AuditEvent.objects.exists())
 
     def test_admin_can_update_role_details_and_departments(self):
         target = self.create_staff("target", StaffProfile.Role.RECEPTIONIST)
@@ -466,6 +591,171 @@ class AuthenticationAndAuthorizationTests(TestCase):
         self.assertTrue(target.is_active)
         self.assertTrue(target.account.is_active)
         self.assertEqual(target.account.last_name, "Clinician")
+        events = {
+            event.action: event
+            for event in AuditEvent.objects.filter(object_id=str(target.pk))
+        }
+        self.assertEqual(
+            set(events),
+            {"staff.account.updated", "staff.role.changed"},
+        )
+        self.assertEqual(
+            events["staff.account.updated"].actor,
+            self.admin_profile.account,
+        )
+        self.assertEqual(events["staff.account.updated"].content_object, target)
+        self.assertEqual(
+            events["staff.account.updated"].metadata,
+            {
+                "account_id": target.account_id,
+                "changed_fields": [
+                    "first_name",
+                    "last_name",
+                    "staff_identifier",
+                    "phone_number",
+                ],
+            },
+        )
+        self.assertEqual(
+            events["staff.role.changed"].metadata,
+            {"account_id": target.account_id, "changed_fields": ["role"]},
+        )
+        metadata = str([event.metadata for event in events.values()])
+        for sensitive_value in (
+            target.account.username,
+            target.account.email,
+            target.account.first_name,
+            target.account.last_name,
+            target.phone_number,
+            target.staff_identifier,
+        ):
+            self.assertNotIn(sensitive_value, metadata)
+
+    def test_staff_update_does_not_commit_when_audit_write_fails(self):
+        target = self.create_staff(
+            "audit-failure-update",
+            StaffProfile.Role.NURSE,
+            staff_identifier="ST-AUDIT-FAIL",
+        )
+        target.account.first_name = "Original"
+        target.account.last_name = "Staff"
+        target.account.save(update_fields=("first_name", "last_name"))
+        second_department = Department.objects.create(name="Failure Unit")
+        self.client.force_login(self.admin_profile.account)
+
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.auth_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(
+                reverse("clinic_auth:staff_account_edit", args=[target.pk]),
+                {
+                    "username": target.account.username,
+                    "first_name": "Changed",
+                    "last_name": "Staff",
+                    "email": target.account.email,
+                    "role": StaffProfile.Role.CLINICIAN,
+                    "staff_identifier": target.staff_identifier,
+                    "phone_number": target.phone_number,
+                    "departments": [second_department.pk],
+                },
+            )
+
+        target.refresh_from_db()
+        target.account.refresh_from_db()
+        self.assertEqual(target.role, StaffProfile.Role.NURSE)
+        self.assertNotEqual(target.account.first_name, "Changed")
+        self.assertEqual(
+            list(target.departments.all()),
+            [self.department],
+        )
+        self.assertFalse(AuditEvent.objects.exists())
+
+    def test_staff_status_does_not_commit_when_audit_write_fails(self):
+        target = self.create_staff(
+            "audit-failure-status",
+            StaffProfile.Role.NURSE,
+        )
+        self.client.force_login(self.admin_profile.account)
+
+        with self.assertRaises(DatabaseError), patch(
+            "clinic.auth_views.record_audit_event",
+            side_effect=DatabaseError("audit storage unavailable"),
+        ):
+            self.client.post(
+                reverse("clinic_auth:staff_account_status", args=[target.pk])
+            )
+
+        target.refresh_from_db()
+        target.account.refresh_from_db()
+        self.assertTrue(target.is_active)
+        self.assertTrue(target.account.is_active)
+        self.assertFalse(AuditEvent.objects.exists())
+
+    def test_staff_department_changes_create_minimal_event(self):
+        target = self.create_staff(
+            "department-change",
+            StaffProfile.Role.NURSE,
+            staff_identifier="ST-DEPT",
+        )
+        target.account.first_name = "Fictional"
+        target.account.last_name = "Nurse"
+        target.account.save(update_fields=("first_name", "last_name"))
+        second_department = Department.objects.create(name="Another Unit")
+        self.client.force_login(self.admin_profile.account)
+
+        response = self.client.post(
+            reverse("clinic_auth:staff_account_edit", args=[target.pk]),
+            {
+                "username": target.account.username,
+                "first_name": target.account.first_name,
+                "last_name": target.account.last_name,
+                "email": target.account.email,
+                "role": target.role,
+                "staff_identifier": target.staff_identifier,
+                "phone_number": target.phone_number,
+                "departments": [second_department.pk],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        event = AuditEvent.objects.get(action="staff.departments.changed")
+        self.assertEqual(event.actor, self.admin_profile.account)
+        self.assertEqual(event.content_object, target)
+        self.assertEqual(
+            event.metadata,
+            {"account_id": target.account_id, "changed_fields": ["departments"]},
+        )
+
+    def test_unchanged_staff_update_does_not_create_audit_event(self):
+        target = self.create_staff(
+            "unchanged-staff",
+            StaffProfile.Role.NURSE,
+            staff_identifier="ST-UNCHANGED",
+        )
+        target.account.first_name = "Fictional"
+        target.account.last_name = "Nurse"
+        target.account.save(update_fields=("first_name", "last_name"))
+        self.client.force_login(self.admin_profile.account)
+
+        response = self.client.post(
+            reverse("clinic_auth:staff_account_edit", args=[target.pk]),
+            {
+                "username": target.account.username,
+                "first_name": target.account.first_name,
+                "last_name": target.account.last_name,
+                "email": target.account.email,
+                "role": target.role,
+                "staff_identifier": target.staff_identifier,
+                "phone_number": target.phone_number,
+                "departments": list(
+                    target.departments.values_list("pk", flat=True)
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(AuditEvent.objects.exists())
 
     def test_last_active_admin_cannot_be_demoted(self):
         self.client.force_login(self.admin_profile.account)
@@ -490,6 +780,7 @@ class AuthenticationAndAuthorizationTests(TestCase):
             self.admin_profile.role,
             StaffProfile.Role.ADMINISTRATOR,
         )
+        self.assertFalse(AuditEvent.objects.exists())
 
     def test_admin_can_deactivate_staff_account_and_prevent_login(self):
         target = self.create_staff("target", StaffProfile.Role.NURSE)
@@ -506,6 +797,10 @@ class AuthenticationAndAuthorizationTests(TestCase):
         target.account.refresh_from_db()
         self.assertFalse(target.is_active)
         self.assertFalse(target.account.is_active)
+        event = AuditEvent.objects.get(action="staff.account.deactivated")
+        self.assertEqual(event.actor, self.admin_profile.account)
+        self.assertEqual(event.content_object, target)
+        self.assertEqual(event.metadata, {"account_id": target.account_id})
         self.client.logout()
         login_response = self.post_login(username="target")
         self.assertEqual(login_response.status_code, 200)
@@ -670,6 +965,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
         )
         self.admin_profile.refresh_from_db()
         self.assertTrue(self.admin_profile.is_active)
+        self.assertFalse(
+            AuditEvent.objects.filter(
+                action="staff.account.deactivated",
+                object_id=str(self.admin_profile.pk),
+            ).exists()
+        )
 
         second_admin = self.create_staff(
             "second-admin",
@@ -681,6 +982,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
         second_admin.refresh_from_db()
         self.assertFalse(second_admin.is_active)
         self.assertFalse(second_admin.account.is_active)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="staff.account.deactivated",
+                object_id=str(second_admin.pk),
+            ).exists()
+        )
 
     def test_inactive_staff_can_be_reactivated_by_administrator(self):
         target = self.create_staff(
@@ -701,6 +1008,10 @@ class AuthenticationAndAuthorizationTests(TestCase):
         target.account.refresh_from_db()
         self.assertTrue(target.is_active)
         self.assertTrue(target.account.is_active)
+        event = AuditEvent.objects.get(action="staff.account.activated")
+        self.assertEqual(event.actor, self.admin_profile.account)
+        self.assertEqual(event.content_object, target)
+        self.assertEqual(event.metadata, {"account_id": target.account_id})
 
     def test_password_change_uses_validators_and_preserves_session(self):
         profiles = [
@@ -731,6 +1042,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
                         f"New-Secure-Password-{index}-88!"
                     )
                 )
+                password_event = AuditEvent.objects.get(
+                    action="auth.password.changed",
+                    actor=profile.account,
+                )
+                self.assertEqual(password_event.content_object, profile.account)
+                self.assertEqual(password_event.metadata, {})
                 self.assertEqual(
                     self.client.get(reverse("clinic_auth:staff_home")).status_code,
                     200,
@@ -753,6 +1070,38 @@ class AuthenticationAndAuthorizationTests(TestCase):
         self.assertTrue(response.context["form"].errors)
         self.admin_profile.account.refresh_from_db()
         self.assertTrue(self.admin_profile.account.check_password(TEST_PASSWORD))
+        self.assertFalse(
+            AuditEvent.objects.filter(action="auth.password.changed").exists()
+        )
+
+    def test_password_change_rolls_back_when_audit_write_fails(self):
+        self.client.force_login(self.admin_profile.account)
+
+        with self.assertLogs("clinic.auth_views", level="ERROR"):
+            with patch(
+                "clinic.auth_views.record_audit_event",
+                side_effect=DatabaseError("storage failure"),
+            ):
+                response = self.client.post(
+                    reverse("clinic_auth:password_change"),
+                    {
+                        "old_password": TEST_PASSWORD,
+                        "new_password1": "New-Valid-Password-42!",
+                        "new_password2": "New-Valid-Password-42!",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Password change could not be completed")
+        self.admin_profile.account.refresh_from_db()
+        self.assertTrue(self.admin_profile.account.check_password(TEST_PASSWORD))
+        self.assertFalse(
+            AuditEvent.objects.filter(action="auth.password.changed").exists()
+        )
+        self.assertEqual(
+            self.client.get(reverse("clinic_auth:staff_home")).status_code,
+            200,
+        )
 
     def test_staff_account_pages_render_without_password_fields(self):
         self.client.force_login(self.admin_profile.account)
@@ -801,6 +1150,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
         )
 
         self.assertRedirects(response, reverse("clinic_auth:password_reset_done"))
+        requested_event = AuditEvent.objects.get(
+            action="auth.password_reset.requested"
+        )
+        self.assertIsNone(requested_event.actor)
+        self.assertIsNone(requested_event.content_object)
+        self.assertEqual(requested_event.metadata, {})
         self.assertEqual(len(mail.outbox), 1)
         reset_path = re.search(
             r"http://testserver(/accounts/password/reset/[^\s]+)",
@@ -830,6 +1185,12 @@ class AuthenticationAndAuthorizationTests(TestCase):
                 "Password-Reset-Secure-927!"
             )
         )
+        completed_event = AuditEvent.objects.get(
+            action="auth.password_reset.completed"
+        )
+        self.assertIsNone(completed_event.actor)
+        self.assertEqual(completed_event.content_object, self.admin_profile.account)
+        self.assertEqual(completed_event.metadata, {})
 
     @override_settings(
         MAILERS={
@@ -855,3 +1216,100 @@ class AuthenticationAndAuthorizationTests(TestCase):
                     reverse("clinic_auth:password_reset_done"),
                 )
         self.assertEqual(len(mail.outbox), 0)
+        reset_events = AuditEvent.objects.filter(
+            action="auth.password_reset.requested"
+        )
+        self.assertEqual(reset_events.count(), 2)
+        self.assertTrue(
+            all(
+                event.actor is None
+                and event.content_object is None
+                and event.metadata == {}
+                for event in reset_events
+            )
+        )
+
+    def test_invalid_password_reset_token_does_not_create_completion_event(self):
+        response = self.client.post(
+            reverse(
+                "clinic_auth:password_reset_confirm",
+                args=["invalid-uid", "invalid-token"],
+            ),
+            {
+                "new_password1": "Password-Reset-Secure-927!",
+                "new_password2": "Password-Reset-Secure-927!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            AuditEvent.objects.filter(
+                action="auth.password_reset.completed"
+            ).exists()
+        )
+
+    @override_settings(
+        MAILERS={
+            "default": {
+                "BACKEND": "django.core.mail.backends.locmem.EmailBackend"
+            }
+        }
+    )
+    def test_password_reset_request_audit_failure_keeps_generic_response(self):
+        with self.assertLogs("clinic.auth_views", level="ERROR") as log_output:
+            with patch(
+                "clinic.auth_views.record_audit_event",
+                side_effect=DatabaseError("storage failure"),
+            ):
+                response = self.client.post(
+                    reverse("clinic_auth:password_reset"),
+                    {"email": self.admin_profile.account.email},
+                )
+
+        self.assertRedirects(response, reverse("clinic_auth:password_reset_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertFalse(AuditEvent.objects.exists())
+        self.assertNotIn(self.admin_profile.account.email, "\n".join(log_output.output))
+
+    @override_settings(
+        MAILERS={
+            "default": {
+                "BACKEND": "django.core.mail.backends.locmem.EmailBackend"
+            }
+        }
+    )
+    def test_password_reset_completion_rolls_back_when_audit_write_fails(self):
+        self.client.post(
+            reverse("clinic_auth:password_reset"),
+            {"email": self.admin_profile.account.email},
+        )
+        reset_path = re.search(
+            r"http://testserver(/accounts/password/reset/[^\s]+)",
+            mail.outbox[0].body,
+        ).group(1)
+        confirm_response = self.client.get(urlsplit(reset_path).path)
+        confirm_url = urlsplit(confirm_response.url).path
+        self.client.get(confirm_url)
+
+        with self.assertLogs("clinic.auth_views", level="ERROR"):
+            with patch(
+                "clinic.auth_views.record_audit_event",
+                side_effect=DatabaseError("storage failure"),
+            ):
+                response = self.client.post(
+                    confirm_url,
+                    {
+                        "new_password1": "Password-Reset-Secure-927!",
+                        "new_password2": "Password-Reset-Secure-927!",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Password reset could not be completed")
+        self.admin_profile.account.refresh_from_db()
+        self.assertTrue(self.admin_profile.account.check_password(TEST_PASSWORD))
+        self.assertFalse(
+            AuditEvent.objects.filter(
+                action="auth.password_reset.completed"
+            ).exists()
+        )

@@ -1,0 +1,26 @@
+{% extends "clinic/auth/base.html" %}
+{% block title %}Operational report | Smart Clinic{% endblock %}
+{% block content %}
+<section class="panel">
+    <p class="eyebrow">{{ role_label }} view</p>
+    <h1>Operational report</h1>
+    <p class="lead">Aggregated appointment and queue activity for your role.</p>
+    <form method="get" class="form-grid form-grid--two">
+        {% for field in form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<p class="field-error">{{ error }}</p>{% endfor %}</div>{% endfor %}
+        {% for error in form.non_field_errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+        <div class="button-row"><button type="submit">Apply dates</button><a class="button button--secondary" href="{% url 'clinic_reports:operations' %}">Clear</a></div>
+    </form>
+</section>
+<section class="panel">
+    <h2>Summary</h2>
+    <dl class="stats-grid dashboard-stats">
+        {% for metric in metrics %}<div class="stat-card"><dt class="stat-card__label">{{ metric.label }}</dt><dd class="stat-card__value">{{ metric.value }}</dd></div>{% endfor %}
+    </dl>
+    <div class="section-heading"><h2>Appointments by status</h2></div>
+    <div class="table-wrap"><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>{% for row in status_rows %}<tr><th scope="row">{{ row.label }}</th><td>{{ row.total }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="section-heading"><h2>Queue by status</h2></div>
+    <div class="table-wrap"><table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>{% for row in queue_rows %}<tr><th scope="row">{{ row.label }}</th><td>{{ row.total }}</td></tr>{% endfor %}</tbody></table></div>
+    <p class="muted">Generated {{ generated_at|date:"M j, Y, P" }}. Counts exclude patient names and clinical note contents.</p>
+    {% if request.user.staff_profile.role == "administrator" %}<p><a href="{% url 'clinic_appointments:appointment_report' %}">Open detailed appointment status report</a></p>{% endif %}
+</section>
+{% endblock %}

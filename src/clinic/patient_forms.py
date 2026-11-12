@@ -53,6 +53,11 @@ class PatientSearchForm(forms.Form):
         initial="active",
     )
 
+    def __init__(self, *args, can_view_archived=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not can_view_archived:
+            self.fields["status"].choices = (("active", "Active patients"),)
+
     def clean_query(self):
         query = self.cleaned_data.get("query", "").strip()
         if any(ord(character) < 32 or ord(character) == 127 for character in query):
@@ -60,7 +65,10 @@ class PatientSearchForm(forms.Form):
         return query
 
     def clean_status(self):
-        return self.cleaned_data.get("status") or "active"
+        status = self.cleaned_data.get("status") or "active"
+        if status not in {choice[0] for choice in self.fields["status"].choices}:
+            raise ValidationError("Select a valid patient status.")
+        return status
 
 
 class PatientIdentifierGenerationError(Exception):
